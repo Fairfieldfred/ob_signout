@@ -47,6 +47,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes for importing patient data.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app uses the local network to discover and transfer patient data between nearby devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_obsignout._tcp</string>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

@@ -2,7 +2,7 @@ name: ob_signout
 description: "OB/GYN physician signout management app"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -30,6 +30,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.4
   provider: ^6.1.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -61,16 +62,29 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
 
+# Flutter Launcher Icons configuration
+flutter_launcher_icons:
+  ios: true
+  android: true
+  image_path_ios: "assets/common/ob_sign_out_icon.png"
+  image_path_ios_dark_transparent: "assets/common/ob_sign_out_app_icon_transparent.png"
+  image_path_android: "assets/android/ob_sign_out_icon.png"
+  adaptive_icon_background: "assets/android/app-icon-background.png"
+  adaptive_icon_foreground: "assets/android/ob_sign_out_app_icon_transparent.png"
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/common/ob_sign_out_icon.png"
+
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/common/
+    - assets/android/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

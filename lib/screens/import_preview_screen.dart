@@ -11,10 +11,7 @@ enum ImportMode { replace, merge }
 class ImportPreviewScreen extends StatefulWidget {
   final ImportResult importResult;
 
-  const ImportPreviewScreen({
-    super.key,
-    required this.importResult,
-  });
+  const ImportPreviewScreen({super.key, required this.importResult});
 
   @override
   State<ImportPreviewScreen> createState() => _ImportPreviewScreenState();
@@ -32,8 +29,14 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
   }
 
   void _checkConflicts() {
-    final patientProvider = Provider.of<PatientProvider>(context, listen: false);
-    _conflicts = _validateImport(patientProvider.patients, widget.importResult.patients);
+    final patientProvider = Provider.of<PatientProvider>(
+      context,
+      listen: false,
+    );
+    _conflicts = _validateImport(
+      patientProvider.patients,
+      widget.importResult.patients,
+    );
   }
 
   @override
@@ -93,10 +96,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.download_outlined,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.download_outlined, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Import Summary',
@@ -109,9 +109,15 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
             const SizedBox(height: 12),
             _buildSummaryRow('From', widget.importResult.senderName),
             const SizedBox(height: 4),
-            _buildSummaryRow('Exported', _formatDateTime(widget.importResult.exportDate)),
+            _buildSummaryRow(
+              'Exported',
+              _formatDateTime(widget.importResult.exportDate),
+            ),
             const SizedBox(height: 4),
-            _buildSummaryRow('Patients', '${widget.importResult.patients.length}'),
+            _buildSummaryRow(
+              'Patients',
+              '${widget.importResult.patients.length}',
+            ),
             if (widget.importResult.notes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -146,10 +152,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium,
-        ),
+        Text(value, style: theme.textTheme.bodyMedium),
       ],
     );
   }
@@ -188,15 +191,17 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            ...(_conflicts.map((conflict) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    '• $conflict',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
+            ...(_conflicts.map(
+              (conflict) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  '• $conflict',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
                   ),
-                ))),
+                ),
+              ),
+            )),
           ],
         ),
       ),
@@ -289,8 +294,10 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
               )
             else
               ...widget.importResult.patients.map((patient) {
-                final hasConflict = _conflicts.any((conflict) =>
-                    conflict.contains('Room ${patient.roomNumber}:'));
+                final hasConflict = _conflicts.any(
+                  (conflict) =>
+                      conflict.contains('Room ${patient.roomNumber}:'),
+                );
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -303,10 +310,7 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
                           borderRadius: BorderRadius.circular(8),
                         )
                       : null,
-                  child: PatientCard(
-                    patient: patient,
-                    showDeleteButton: false,
-                  ),
+                  child: PatientCard(patient: patient, showDeleteButton: false),
                 );
               }),
           ],
@@ -315,16 +319,25 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
     );
   }
 
-  List<String> _validateImport(List<Patient> existingPatients, List<Patient> newPatients) {
+  List<String> _validateImport(
+    List<Patient> existingPatients,
+    List<Patient> newPatients,
+  ) {
     final List<String> conflicts = [];
 
     for (final newPatient in newPatients) {
       final existingPatient = existingPatients
-          .where((p) => p.roomNumber.toLowerCase() == newPatient.roomNumber.toLowerCase())
+          .where(
+            (p) =>
+                p.roomNumber.toLowerCase() ==
+                newPatient.roomNumber.toLowerCase(),
+          )
           .firstOrNull;
 
       if (existingPatient != null) {
-        conflicts.add('Room ${newPatient.roomNumber}: ${existingPatient.initials} → ${newPatient.initials}');
+        conflicts.add(
+          'Room ${newPatient.roomNumber}: ${existingPatient.initials} → ${newPatient.initials}',
+        );
       }
     }
 
@@ -363,7 +376,10 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
     });
 
     try {
-      final patientProvider = Provider.of<PatientProvider>(context, listen: false);
+      final patientProvider = Provider.of<PatientProvider>(
+        context,
+        listen: false,
+      );
 
       // Get merged patient list
       final mergedPatients = _mergePatients(
@@ -382,7 +398,11 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
         if (_selectedMode == ImportMode.merge) {
           // Remove any existing patient with same room
           final existingPatient = patientProvider.patients
-              .where((p) => p.roomNumber.toLowerCase() == patient.roomNumber.toLowerCase())
+              .where(
+                (p) =>
+                    p.roomNumber.toLowerCase() ==
+                    patient.roomNumber.toLowerCase(),
+              )
               .firstOrNull;
           if (existingPatient != null) {
             await patientProvider.deletePatient(existingPatient.id);
@@ -430,7 +450,9 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
   }
 
   String _formatDateTime(DateTime dateTime) {
-    final hour = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
+    final hour = dateTime.hour > 12
+        ? dateTime.hour - 12
+        : (dateTime.hour == 0 ? 12 : dateTime.hour);
     final period = dateTime.hour >= 12 ? 'PM' : 'AM';
     return '${dateTime.month}/${dateTime.day}/${dateTime.year} $hour:${dateTime.minute.toString().padLeft(2, '0')} $period';
   }

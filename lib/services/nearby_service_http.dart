@@ -88,10 +88,12 @@ class NearbyTransferServiceHttp {
   Future<void> startAdvertising(String displayName, {required String jsonData}) async {
     try {
       _updateState(NearbyDeviceState.advertising);
-      _jsonDataToShare = jsonData;
 
       // Stop any existing services
       await stopAll();
+
+      // Set the data to share AFTER stopping (stopAll clears it)
+      _jsonDataToShare = jsonData;
 
       // Start HTTP server on a random available port
       _httpServer = await shelf_io.serve(
@@ -175,8 +177,16 @@ class NearbyTransferServiceHttp {
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
-    if (request.method == 'GET' && request.url.path == 'data') {
+    print('Received request: ${request.method} ${request.url.path}');
+    print('Full URL: ${request.url}');
+    print('Request URI: ${request.requestedUri}');
+
+    // Handle both with and without leading slash, and empty path
+    final path = request.url.path.replaceAll(RegExp(r'^/+'), '');
+
+    if (request.method == 'GET' && path == 'data') {
       if (_jsonDataToShare != null) {
+        print('Returning data: ${_jsonDataToShare?.substring(0, 50)}...');
         return shelf.Response.ok(
           _jsonDataToShare,
           headers: {
@@ -185,9 +195,11 @@ class NearbyTransferServiceHttp {
           },
         );
       } else {
+        print('No data available to share');
         return shelf.Response.notFound('No data available');
       }
     }
+    print('Path not matched. Returning 404');
     return shelf.Response.notFound('Not found');
   }
 
