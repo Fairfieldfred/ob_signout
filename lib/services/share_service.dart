@@ -86,7 +86,11 @@ class ShareService {
     );
   }
 
-  static String _createObsFileData(List<Patient> patients, String? senderName, String? notes) {
+  /// Creates OBS file data format from patient list.
+  ///
+  /// This is a public method to allow other services to create
+  /// the standardized data format without going through file sharing.
+  static String createObsFileData(List<Patient> patients, String? senderName, String? notes) {
     final obsData = {
       'version': '1.0',
       'appName': 'OB Sign-Out',
@@ -98,6 +102,11 @@ class ShareService {
     };
 
     return jsonEncode(obsData);
+  }
+
+  // Deprecated: Use createObsFileData instead
+  static String _createObsFileData(List<Patient> patients, String? senderName, String? notes) {
+    return createObsFileData(patients, senderName, notes);
   }
 
   static ImportResult parseObsData(String jsonData) {

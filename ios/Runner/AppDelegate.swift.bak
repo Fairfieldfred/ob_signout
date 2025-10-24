@@ -14,11 +14,11 @@ import CoreBluetooth
     GeneratedPluginRegistrant.register(with: self)
 
     // Register BLE peripheral channel
-    NSLog("[AppDelegate] Registering BLE peripheral channel")
+    print("[AppDelegate] Registering BLE peripheral channel")
     let controller = window?.rootViewController as! FlutterViewController
     bleChannel = BlePeripheralChannel()
     bleChannel?.register(with: registrar(forPlugin: "BlePeripheralPlugin")!)
-    NSLog("[AppDelegate] BLE peripheral channel registered")
+    print("[AppDelegate] BLE peripheral channel registered")
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -34,18 +34,18 @@ class BlePeripheralChannel {
     private var channel: FlutterMethodChannel?
 
     func register(with registrar: FlutterPluginRegistrar) {
-        NSLog("[BLE Channel] Registering channel with name: \(BlePeripheralChannel.channelName)")
+        print("[BLE Channel] Registering channel with name: \(BlePeripheralChannel.channelName)")
         channel = FlutterMethodChannel(name: BlePeripheralChannel.channelName, binaryMessenger: registrar.messenger())
 
         channel?.setMethodCallHandler { [weak self] (call, result) in
-            NSLog("[BLE Channel] Method call handler invoked for: \(call.method)")
+            print("[BLE Channel] Method call handler invoked for: \(call.method)")
             self?.handle(call, result: result)
         }
-        NSLog("[BLE Channel] Method call handler registered")
+        print("[BLE Channel] Method call handler registered")
     }
 
     private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        NSLog("[BLE Channel] Received method call: \(call.method)")
+        print("[BLE Channel] Received method call: \(call.method)")
         switch call.method {
         case "startAdvertising":
             handleStartAdvertising(call, result: result)
@@ -54,32 +54,32 @@ class BlePeripheralChannel {
             handleStopAdvertising(result)
 
         default:
-            NSLog("[BLE Channel] Method not implemented: \(call.method)")
+            print("[BLE Channel] Method not implemented: \(call.method)")
             result(FlutterMethodNotImplemented)
         }
     }
 
     private func handleStartAdvertising(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        NSLog("[BLE Channel] handleStartAdvertising called")
+        print("[BLE Channel] handleStartAdvertising called")
         guard let args = call.arguments as? [String: Any],
               let metadataBytes = args["metadata"] as? FlutterStandardTypedData,
               let chunksData = args["chunks"] as? [FlutterStandardTypedData] else {
-            NSLog("[BLE Channel] Invalid arguments")
+            print("[BLE Channel] Invalid arguments")
             result(FlutterError(code: "INVALID_ARGS", message: "Invalid arguments", details: nil))
             return
         }
 
         let metadata = metadataBytes.data
         let chunks = chunksData.map { $0.data }
-        NSLog("[BLE Channel] Got \(chunks.count) chunks")
+        print("[BLE Channel] Got \(chunks.count) chunks")
 
         if peripheralManager == nil {
-            NSLog("[BLE Channel] Creating new BlePeripheralManager")
+            print("[BLE Channel] Creating new BlePeripheralManager")
             peripheralManager = BlePeripheralManager()
             setupCallbacks()
         }
 
-        NSLog("[BLE Channel] Calling startAdvertising on peripheral manager")
+        print("[BLE Channel] Calling startAdvertising on peripheral manager")
         peripheralManager?.startAdvertising(metadata: metadata, chunks: chunks)
         result(nil)
     }
@@ -152,21 +152,21 @@ class BlePeripheralManager: NSObject {
 
     /// Prepares data for transfer and starts advertising.
     func startAdvertising(metadata: Data, chunks: [Data]) {
-        NSLog("[BLE] startAdvertising called with \(chunks.count) chunks")
+        print("[BLE] startAdvertising called with \(chunks.count) chunks")
         self.metadataBytes = metadata
         self.chunks = chunks
         self.currentChunkIndex = 0
 
         // Check if peripheral manager is ready
         let state = peripheralManager?.state ?? .unknown
-        NSLog("[BLE] Peripheral manager state: \(state.rawValue)")
+        print("[BLE] Peripheral manager state: \(state.rawValue)")
 
         if state == .poweredOn {
-            NSLog("[BLE] State is poweredOn, calling setupService")
+            print("[BLE] State is poweredOn, calling setupService")
             // Setup service - advertising will start in didAdd service callback
             setupService()
         } else {
-            NSLog("[BLE] State is NOT poweredOn, waiting for state change")
+            print("[BLE] State is NOT poweredOn, waiting for state change")
         }
         // Otherwise, setupService will be called when state becomes .poweredOn
     }
@@ -181,14 +181,14 @@ class BlePeripheralManager: NSObject {
     }
 
     private func setupService() {
-        NSLog("[BLE] setupService called")
+        print("[BLE] setupService called")
         // Prevent duplicate service setup
         if isSettingUpService {
-            NSLog("[BLE] Already setting up service, returning")
+            print("[BLE] Already setting up service, returning")
             return
         }
         isSettingUpService = true
-        NSLog("[BLE] Setting isSettingUpService = true")
+        print("[BLE] Setting isSettingUpService = true")
 
         // Create metadata characteristic (read-only)
         metadataCharacteristic = CBMutableCharacteristic(
@@ -223,22 +223,22 @@ class BlePeripheralManager: NSObject {
         ]
 
         // Add service to peripheral manager
-        NSLog("[BLE] Removing all services and adding new service")
+        print("[BLE] Removing all services and adding new service")
         peripheralManager?.removeAllServices()
         peripheralManager?.add(service!)
-        NSLog("[BLE] Service added to peripheral manager")
+        print("[BLE] Service added to peripheral manager")
     }
 
     private func startAdvertisingInternal() {
-        NSLog("[BLE] startAdvertisingInternal called")
+        print("[BLE] startAdvertisingInternal called")
         let advertisementData: [String: Any] = [
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID],
             CBAdvertisementDataLocalNameKey: "OB SignOut"
         ]
 
-        NSLog("[BLE] Starting advertising with service UUID: \(serviceUUID)")
+        print("[BLE] Starting advertising with service UUID: \(serviceUUID)")
         peripheralManager?.startAdvertising(advertisementData)
-        NSLog("[BLE] Sending advertising state to Flutter")
+        print("[BLE] Sending advertising state to Flutter")
         onStateChanged?("advertising")
     }
 
@@ -258,7 +258,7 @@ class BlePeripheralManager: NSObject {
             // Check if transfer is complete
             if currentChunkIndex >= chunks.count {
                 onTransferComplete?()
-                // Note: Don't also send onStateChanged("complete") - that would be redundant
+                onStateChanged?("complete")
             } else {
                 // Send next chunk asynchronously to avoid stack overflow
                 DispatchQueue.main.async { [weak self] in
@@ -276,69 +276,69 @@ class BlePeripheralManager: NSObject {
 
 extension BlePeripheralManager: CBPeripheralManagerDelegate {
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
-        NSLog("[BLE] peripheralManagerDidUpdateState: \(peripheral.state.rawValue)")
+        print("[BLE] peripheralManagerDidUpdateState: \(peripheral.state.rawValue)")
         switch peripheral.state {
         case .poweredOn:
-            NSLog("[BLE] State changed to poweredOn")
+            print("[BLE] State changed to poweredOn")
             onStateChanged?("powered_on")
             // If we have data ready, setup the service
             // Advertising will start automatically in didAdd service callback
             if metadataBytes != nil {
-                NSLog("[BLE] metadataBytes is set, calling setupService from state change")
+                print("[BLE] metadataBytes is set, calling setupService from state change")
                 setupService()
             } else {
-                NSLog("[BLE] metadataBytes is nil, not calling setupService")
+                print("[BLE] metadataBytes is nil, not calling setupService")
             }
 
         case .poweredOff:
-            NSLog("[BLE] State changed to poweredOff")
+            print("[BLE] State changed to poweredOff")
             onStateChanged?("powered_off")
             onError?("Bluetooth is turned off. Please enable Bluetooth.")
 
         case .unauthorized:
-            NSLog("[BLE] State changed to unauthorized")
+            print("[BLE] State changed to unauthorized")
             onStateChanged?("unauthorized")
             onError?("Bluetooth permission denied. Please enable in Settings.")
 
         case .unsupported:
-            NSLog("[BLE] State changed to unsupported")
+            print("[BLE] State changed to unsupported")
             onStateChanged?("unsupported")
             onError?("Bluetooth LE is not supported on this device.")
 
         default:
-            NSLog("[BLE] State changed to: \(peripheral.state.rawValue)")
+            print("[BLE] State changed to: \(peripheral.state.rawValue)")
             onStateChanged?("unknown")
         }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
-        NSLog("[BLE] didAdd service callback")
+        print("[BLE] didAdd service callback")
         isSettingUpService = false
 
         if let error = error {
-            NSLog("[BLE] Error adding service: \(error.localizedDescription)")
+            print("[BLE] Error adding service: \(error.localizedDescription)")
             onError?("Failed to add service: \(error.localizedDescription)")
             return
         }
 
-        NSLog("[BLE] Service added successfully")
+        print("[BLE] Service added successfully")
         // Service added successfully, now we can start advertising
         if metadataBytes != nil {
-            NSLog("[BLE] Calling startAdvertisingInternal")
+            print("[BLE] Calling startAdvertisingInternal")
             startAdvertisingInternal()
         } else {
-            NSLog("[BLE] metadataBytes is nil, not starting advertising")
+            print("[BLE] metadataBytes is nil, not starting advertising")
         }
     }
 
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
-        NSLog("[BLE] peripheralManagerDidStartAdvertising callback")
+        print("[BLE] peripheralManagerDidStartAdvertising callback")
         if let error = error {
-            NSLog("[BLE] Error starting advertising: \(error.localizedDescription)")
+            print("[BLE] Error starting advertising: \(error.localizedDescription)")
             onError?("Failed to start advertising: \(error.localizedDescription)")
             return
         }
-        NSLog("[BLE] Advertising started successfully")
+        print("[BLE] Advertising started successfully")
         onStateChanged?("advertising")
     }
 

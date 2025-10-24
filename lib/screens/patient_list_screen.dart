@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,8 +6,13 @@ import '../models/patient.dart';
 import '../models/patient_type.dart';
 import '../providers/patient_provider.dart';
 import '../services/share_service.dart';
+import '../services/transfer_manager.dart';
+import '../services/transfer_strategy.dart';
 import '../widgets/patient_card.dart';
+import '../widgets/transfer_method_dialog.dart';
 import 'add_edit_patient_screen.dart';
+import 'ble_receive_screen.dart';
+import 'ble_transfer_screen.dart';
 import 'import_preview_screen.dart';
 import 'nearby_receive_screen.dart';
 import 'nearby_transfer_screen.dart';
@@ -20,6 +26,14 @@ class PatientListScreen extends StatefulWidget {
 }
 
 class _PatientListScreenState extends State<PatientListScreen> {
+  final TransferManager _transferManager = TransferManager();
+
+  @override
+  void dispose() {
+    _transferManager.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PatientProvider>(
@@ -89,6 +103,17 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 _handleShareOption(context, patientProvider, value),
             itemBuilder: (context) => [
               const PopupMenuItem(
+                value: 'smart_share',
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text('Smart Share', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
                 value: 'share_text',
                 child: Row(
                   children: [
@@ -112,9 +137,9 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 value: 'share_nearby',
                 child: Row(
                   children: [
-                    Icon(Icons.share),
+                    Icon(Icons.wifi),
                     SizedBox(width: 8),
-                    Text('Send via nearby'),
+                    Text('Send via WiFi'),
                   ],
                 ),
               ),
@@ -439,6 +464,9 @@ class _PatientListScreenState extends State<PatientListScreen> {
       if (!context.mounted) return;
 
       switch (value) {
+        case 'smart_share':
+          await _smartShare(context, patientProvider);
+          break;
         case 'share_text':
           await _shareSignout(context, patientProvider);
           break;
@@ -454,6 +482,134 @@ class _PatientListScreenState extends State<PatientListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Share failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Smart share - shows transfer method dialog and handles the selected method.
+  Future<void> _smartShare(
+    BuildContext context,
+    PatientProvider patientProvider,
+  ) async {
+    try {
+      if (!context.mounted) return;
+
+      final patients = List<Patient>.from(patientProvider.patients);
+
+      if (patients.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No patients to share')),
+        );
+        return;
+      }
+
+      // Calculate estimated data size
+      final jsonData = ShareService.createObsFileData(patients, 'Sender', null);
+      final dataSize = utf8.encode(jsonData).length;
+
+      // Show transfer method dialog
+      final selectedMethod = await TransferMethodDialog.show(
+        context: context,
+        transferManager: _transferManager,
+        estimatedDataSizeBytes: dataSize,
+      );
+
+      if (selectedMethod == null || !context.mounted) return;
+
+      // Get sender name
+      final senderName = await _showSenderNameDialog(context);
+      if (senderName == null || !context.mounted) return;
+
+      // Handle the selected method
+      await _executeTransfer(
+        context,
+        selectedMethod,
+        patients,
+        senderName,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Smart share failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Executes the transfer using the selected method.
+  Future<void> _executeTransfer(
+    BuildContext context,
+    TransferMethod method,
+    List<Patient> patients,
+    String senderName,
+  ) async {
+    try {
+      if (!context.mounted) return;
+
+      // For WiFi transfer, navigate to the existing screen
+      if (method == TransferMethod.wifi) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NearbyTransferScreen(
+              patients: patients,
+              senderName: senderName,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // For Bluetooth transfer, navigate to the BLE screen
+      if (method == TransferMethod.bluetooth) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BleTransferScreen(
+              patients: patients,
+              senderName: senderName,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // For AirDrop and Nearby Share, use the transfer manager
+      final result = await _transferManager.send(
+        method: method,
+        patients: patients,
+        senderName: senderName,
+        notes: 'Patient signout data from ${DateTime.now().month}/${DateTime.now().day}/${DateTime.now().year}',
+      );
+
+      if (!context.mounted) return;
+
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${method.displayName} share initiated'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.errorMessage ?? 'Transfer failed'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transfer failed: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -748,15 +904,55 @@ class _PatientListScreenState extends State<PatientListScreen> {
 
   Future<void> _navigateToNearbyReceive(BuildContext context) async {
     try {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const NearbyReceiveScreen()),
+      // Show dialog to choose receive method
+      final method = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Choose Receive Method'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.wifi),
+                title: const Text('WiFi'),
+                subtitle: const Text('Faster, requires network'),
+                onTap: () => Navigator.pop(context, 'wifi'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bluetooth),
+                title: const Text('Bluetooth'),
+                subtitle: const Text('Slower, works offline'),
+                onTap: () => Navigator.pop(context, 'bluetooth'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
       );
+
+      if (method == null || !context.mounted) return;
+
+      if (method == 'wifi') {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const NearbyReceiveScreen()),
+        );
+      } else if (method == 'bluetooth') {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const BleReceiveScreen()),
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to start nearby receive: $e'),
+            content: Text('Failed to start receive: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
