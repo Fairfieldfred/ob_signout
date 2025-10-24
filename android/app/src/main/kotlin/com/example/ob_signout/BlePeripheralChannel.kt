@@ -42,9 +42,10 @@ class BlePeripheralChannel(private val context: Context, messenger: BinaryMessen
 
         val metadata = args["metadata"] as? ByteArray
         val chunksData = args["chunks"] as? List<ByteArray>
+        val senderName = args["senderName"] as? String
 
-        if (metadata == null || chunksData == null) {
-            result.error("INVALID_ARGS", "Missing metadata or chunks", null)
+        if (metadata == null || chunksData == null || senderName == null) {
+            result.error("INVALID_ARGS", "Missing metadata, chunks, or senderName", null)
             return
         }
 
@@ -53,7 +54,7 @@ class BlePeripheralChannel(private val context: Context, messenger: BinaryMessen
             setupCallbacks()
         }
 
-        peripheralManager?.startAdvertising(metadata, chunksData)
+        peripheralManager?.startAdvertising(metadata, chunksData, senderName)
         result.success(null)
     }
 

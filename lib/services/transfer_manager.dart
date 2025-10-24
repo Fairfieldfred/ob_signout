@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/patient.dart';
 import 'ble_transfer_strategy.dart';
 import 'native_share_strategy.dart';
@@ -37,13 +38,13 @@ class TransferManager {
   ///
   /// The recommendation algorithm prioritizes:
   /// 1. Same-platform native sharing (AirDrop/Nearby Share) for best UX
-  /// 2. WiFi for cross-platform transfers
-  /// 3. Bluetooth only if offline and cross-platform (future)
-  TransferMethodRecommendation recommendMethod({
+  /// 2. WiFi for cross-platform transfers (only if network is available)
+  /// 3. Bluetooth if WiFi is unavailable or for offline scenarios
+  Future<TransferMethodRecommendation> recommendMethod({
     bool? targetIsIOS,
     bool? targetIsAndroid,
     int? estimatedDataSizeBytes,
-  }) {
+  }) async {
     final currentPlatformIsIOS = Platform.isIOS;
     final currentPlatformIsAndroid = Platform.isAndroid;
 
@@ -68,19 +69,68 @@ class TransferManager {
       );
     }
 
-    // If target platform is unknown or different, recommend WiFi
-    // (This covers cross-platform scenarios)
+    // Check if WiFi is actually available and working
+    final hasWorkingWiFi = await _checkWiFiConnectivity();
     final dataSize = estimatedDataSizeBytes ?? 50000; // Default ~50KB
-    final estimatedWiFiSeconds = (dataSize / 10000).ceil(); // ~10KB/sec
+
+    // If WiFi is available, recommend it for cross-platform transfers
+    if (hasWorkingWiFi) {
+      final estimatedWiFiSeconds = (dataSize / 10000).ceil(); // ~10KB/sec
+
+      return TransferMethodRecommendation(
+        method: TransferMethod.wifi,
+        reason: targetIsIOS == null && targetIsAndroid == null
+            ? 'Works with all devices on the same WiFi network'
+            : 'Best option for cross-platform transfers',
+        confidence: RecommendationConfidence.high,
+        estimatedTimeSeconds: estimatedWiFiSeconds,
+      );
+    }
+
+    // If WiFi is not available, recommend Bluetooth
+    final estimatedBluetoothSeconds = (dataSize / 5000).ceil(); // ~5KB/sec (slower than WiFi)
 
     return TransferMethodRecommendation(
-      method: TransferMethod.wifi,
-      reason: targetIsIOS == null && targetIsAndroid == null
-          ? 'Works with all devices on the same WiFi network'
-          : 'Best option for cross-platform transfers',
-      confidence: RecommendationConfidence.high,
-      estimatedTimeSeconds: estimatedWiFiSeconds,
+      method: TransferMethod.bluetooth,
+      reason: hasWorkingWiFi == false
+          ? 'WiFi not available - Bluetooth works offline'
+          : 'Works without internet connection',
+      confidence: RecommendationConfidence.medium,
+      estimatedTimeSeconds: estimatedBluetoothSeconds,
     );
+  }
+
+  /// Checks if WiFi is connected and working.
+  ///
+  /// Returns true if connected to WiFi, false otherwise.
+  Future<bool> _checkWiFiConnectivity() async {
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+
+      // Check if connected to WiFi or Ethernet
+      final hasWiFiConnection = connectivityResult.contains(ConnectivityResult.wifi) ||
+          connectivityResult.contains(ConnectivityResult.ethernet);
+
+      if (!hasWiFiConnection) {
+        return false;
+      }
+
+      // Additional check: try to verify the connection is actually working
+      // by checking if we can reach a local network address
+      // This helps catch cases where WiFi is connected but has no internet/local network
+      try {
+        final result = await InternetAddress.lookup('google.com')
+            .timeout(const Duration(seconds: 3));
+        return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        // If we can't reach the internet, WiFi might still work for local network
+        // So we'll still return true if WiFi is connected
+        return true;
+      }
+    } catch (e) {
+      // If connectivity check fails, assume WiFi is not available
+      return false;
+    }
   }
 
   /// Returns all available transfer methods for the current platform.

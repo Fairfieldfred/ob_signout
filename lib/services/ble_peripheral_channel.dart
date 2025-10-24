@@ -37,17 +37,21 @@ class BlePeripheralChannel {
   ///
   /// [metadata] Encoded metadata about the transfer
   /// [chunks] List of data chunks to be transferred
+  /// [senderName] Name of the person sending the data (displayed during scanning)
   Future<void> startAdvertising({
     required Uint8List metadata,
     required List<Uint8List> chunks,
+    required String senderName,
   }) async {
     debugPrint('[BLE Channel] startAdvertising called with ${chunks.length} chunks');
     debugPrint('[BLE Channel] metadata length: ${metadata.length} bytes');
+    debugPrint('[BLE Channel] sender name: $senderName');
     debugPrint('[BLE Channel] About to invoke platform method...');
     try {
       final result = await _channel.invokeMethod('startAdvertising', {
         'metadata': metadata,
         'chunks': chunks,
+        'senderName': senderName,
       });
       debugPrint('[BLE Channel] startAdvertising method call completed, result: $result');
     } on PlatformException catch (e) {

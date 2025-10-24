@@ -201,11 +201,13 @@ class TransferMethodDialog extends StatelessWidget {
     bool? targetIsIOS,
     bool? targetIsAndroid,
   }) async {
-    final recommendation = transferManager.recommendMethod(
+    final recommendation = await transferManager.recommendMethod(
       targetIsIOS: targetIsIOS,
       targetIsAndroid: targetIsAndroid,
       estimatedDataSizeBytes: estimatedDataSizeBytes,
     );
+
+    if (!context.mounted) return null;
 
     return await showDialog<TransferMethod>(
       context: context,

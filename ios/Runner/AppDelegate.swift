@@ -63,7 +63,8 @@ class BlePeripheralChannel {
         NSLog("[BLE Channel] handleStartAdvertising called")
         guard let args = call.arguments as? [String: Any],
               let metadataBytes = args["metadata"] as? FlutterStandardTypedData,
-              let chunksData = args["chunks"] as? [FlutterStandardTypedData] else {
+              let chunksData = args["chunks"] as? [FlutterStandardTypedData],
+              let senderName = args["senderName"] as? String else {
             NSLog("[BLE Channel] Invalid arguments")
             result(FlutterError(code: "INVALID_ARGS", message: "Invalid arguments", details: nil))
             return
@@ -71,7 +72,7 @@ class BlePeripheralChannel {
 
         let metadata = metadataBytes.data
         let chunks = chunksData.map { $0.data }
-        NSLog("[BLE Channel] Got \(chunks.count) chunks")
+        NSLog("[BLE Channel] Got \(chunks.count) chunks, sender: \(senderName)")
 
         if peripheralManager == nil {
             NSLog("[BLE Channel] Creating new BlePeripheralManager")
@@ -80,7 +81,7 @@ class BlePeripheralChannel {
         }
 
         NSLog("[BLE Channel] Calling startAdvertising on peripheral manager")
-        peripheralManager?.startAdvertising(metadata: metadata, chunks: chunks)
+        peripheralManager?.startAdvertising(metadata: metadata, chunks: chunks, senderName: senderName)
         result(nil)
     }
 
@@ -133,6 +134,7 @@ class BlePeripheralManager: NSObject {
     private var metadataBytes: Data?
     private var chunks: [Data] = []
     private var currentChunkIndex: Int = 0
+    private var senderName: String = "OB SignOut"
 
     // Connected centrals
     private var subscribedCentral: CBCentral?
@@ -151,11 +153,12 @@ class BlePeripheralManager: NSObject {
     }
 
     /// Prepares data for transfer and starts advertising.
-    func startAdvertising(metadata: Data, chunks: [Data]) {
-        NSLog("[BLE] startAdvertising called with \(chunks.count) chunks")
+    func startAdvertising(metadata: Data, chunks: [Data], senderName: String) {
+        NSLog("[BLE] startAdvertising called with \(chunks.count) chunks, sender: \(senderName)")
         self.metadataBytes = metadata
         self.chunks = chunks
         self.currentChunkIndex = 0
+        self.senderName = senderName
 
         // Check if peripheral manager is ready
         let state = peripheralManager?.state ?? .unknown
@@ -233,10 +236,10 @@ class BlePeripheralManager: NSObject {
         NSLog("[BLE] startAdvertisingInternal called")
         let advertisementData: [String: Any] = [
             CBAdvertisementDataServiceUUIDsKey: [serviceUUID],
-            CBAdvertisementDataLocalNameKey: "OB SignOut"
+            CBAdvertisementDataLocalNameKey: senderName
         ]
 
-        NSLog("[BLE] Starting advertising with service UUID: \(serviceUUID)")
+        NSLog("[BLE] Starting advertising with service UUID: \(serviceUUID), name: \(senderName)")
         peripheralManager?.startAdvertising(advertisementData)
         NSLog("[BLE] Sending advertising state to Flutter")
         onStateChanged?("advertising")

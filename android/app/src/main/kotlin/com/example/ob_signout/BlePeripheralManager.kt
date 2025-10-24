@@ -43,6 +43,7 @@ class BlePeripheralManager(private val context: Context) {
     private var metadataBytes: ByteArray? = null
     private var chunks: List<ByteArray> = listOf()
     private var currentChunkIndex: Int = 0
+    private var senderName: String = "OB SignOut"
 
     // Connected device
     private var connectedDevice: BluetoothDevice? = null
@@ -61,10 +62,11 @@ class BlePeripheralManager(private val context: Context) {
     /**
      * Prepares data for transfer and starts advertising.
      */
-    fun startAdvertising(metadata: ByteArray, chunks: List<ByteArray>) {
+    fun startAdvertising(metadata: ByteArray, chunks: List<ByteArray>, senderName: String) {
         this.metadataBytes = metadata
         this.chunks = chunks
         this.currentChunkIndex = 0
+        this.senderName = senderName
 
         if (!isBluetoothEnabled()) {
             onError?.invoke("Bluetooth is turned off. Please enable Bluetooth.")
@@ -156,11 +158,17 @@ class BlePeripheralManager(private val context: Context) {
                 .build()
 
             val data = AdvertiseData.Builder()
-                .setIncludeDeviceName(true)
+                .setIncludeDeviceName(false)  // We'll use scan response for custom name
                 .addServiceUuid(ParcelUuid(SERVICE_UUID))
                 .build()
 
-            bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+            // Use scan response data to include the sender name
+            val scanResponse = AdvertiseData.Builder()
+                .setIncludeDeviceName(false)
+                .addServiceData(ParcelUuid(SERVICE_UUID), senderName.toByteArray(Charsets.UTF_8))
+                .build()
+
+            bluetoothLeAdvertiser?.startAdvertising(settings, data, scanResponse, advertiseCallback)
         } catch (e: SecurityException) {
             Log.e(TAG, "Security exception starting advertising", e)
             onError?.invoke("Permission denied. Please grant Bluetooth permissions.")

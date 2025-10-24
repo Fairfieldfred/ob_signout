@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -96,54 +97,10 @@ class _PatientListScreenState extends State<PatientListScreen> {
           ],
         ),
         if (patientProvider.totalPatientCount > 0) ...[
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.share),
-            tooltip: 'Share options',
-            onSelected: (value) =>
-                _handleShareOption(context, patientProvider, value),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'smart_share',
-                child: Row(
-                  children: [
-                    Icon(Icons.auto_awesome, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Text('Smart Share', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'share_text',
-                child: Row(
-                  children: [
-                    Icon(Icons.text_snippet_outlined),
-                    SizedBox(width: 8),
-                    Text('Share as text'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'share_file',
-                child: Row(
-                  children: [
-                    Icon(Icons.file_present_outlined),
-                    SizedBox(width: 8),
-                    Text('Share as file'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'share_nearby',
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi),
-                    SizedBox(width: 8),
-                    Text('Send via WiFi'),
-                  ],
-                ),
-              ),
-            ],
+          IconButton(
+            icon: Icon(Platform.isIOS ? Icons.ios_share : Icons.share),
+            tooltip: 'Smart Share',
+            onPressed: () => _smartShare(context, patientProvider),
           ),
           PopupMenuButton<String>(
             onSelected: (value) =>
@@ -436,58 +393,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
     }
   }
 
-  Future<void> _shareSignout(
-    BuildContext context,
-    PatientProvider patientProvider,
-  ) async {
-    try {
-      await ShareService.shareSignout(patients: patientProvider.patients);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to share signout: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _handleShareOption(
-    BuildContext context,
-    PatientProvider patientProvider,
-    String value,
-  ) async {
-    try {
-      // Check if context and provider are still valid
-      if (!context.mounted) return;
-
-      switch (value) {
-        case 'smart_share':
-          await _smartShare(context, patientProvider);
-          break;
-        case 'share_text':
-          await _shareSignout(context, patientProvider);
-          break;
-        case 'share_file':
-          await _sharePatientData(context, patientProvider);
-          break;
-        case 'share_nearby':
-          await _shareNearby(context, patientProvider);
-          break;
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Share failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 
   /// Smart share - shows transfer method dialog and handles the selected method.
   Future<void> _smartShare(
@@ -617,38 +522,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
     }
   }
 
-  Future<void> _sharePatientData(
-    BuildContext context,
-    PatientProvider patientProvider,
-  ) async {
-    try {
-      // Check if context is still valid
-      if (!context.mounted) return;
-
-      // Get a snapshot of patients to avoid accessing provider after disposal
-      final patients = List<Patient>.from(patientProvider.patients);
-
-      // Get sender name from user
-      final senderName = await _showSenderNameDialog(context);
-      if (senderName == null || !context.mounted) return;
-
-      await ShareService.sharePatientData(
-        patients: patients,
-        senderName: senderName,
-        notes:
-            'Patient signout data from ${DateTime.now().month}/${DateTime.now().day}/${DateTime.now().year}',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to share patient data: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 
   Future<String?> _showSenderNameDialog(BuildContext context) async {
     final controller = TextEditingController();
@@ -862,45 +735,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
     }
   }
 
-  Future<void> _shareNearby(
-    BuildContext context,
-    PatientProvider patientProvider,
-  ) async {
-    try {
-      if (!context.mounted) return;
-
-      final patients = List<Patient>.from(patientProvider.patients);
-
-      if (patients.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('No patients to share')));
-        return;
-      }
-
-      // Get sender name
-      final senderName = await _showSenderNameDialog(context);
-      if (senderName == null || !context.mounted) return;
-
-      // Navigate to nearby transfer screen
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              NearbyTransferScreen(patients: patients, senderName: senderName),
-        ),
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to start nearby transfer: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _navigateToNearbyReceive(BuildContext context) async {
     try {

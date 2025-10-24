@@ -260,9 +260,27 @@ class BleTransferStrategy implements TransferStrategy {
   }
 
   void _addDiscoveredDevice(ScanResult result) {
-    final deviceName = result.device.platformName.isNotEmpty
-        ? result.device.platformName
-        : 'Unknown Device';
+    // Try to get sender name from service data (Android) or platform name (iOS)
+    String deviceName = 'Unknown Device';
+
+    // First, try to get sender name from service data (Android sends it this way)
+    final serviceData = result.advertisementData.serviceData;
+    if (serviceData.isNotEmpty) {
+      final serviceUuid = Guid(BleProtocol.serviceUuid);
+      final senderNameBytes = serviceData[serviceUuid];
+      if (senderNameBytes != null && senderNameBytes.isNotEmpty) {
+        try {
+          deviceName = String.fromCharCodes(senderNameBytes);
+        } catch (e) {
+          debugPrint('[BLE] Failed to decode sender name from service data: $e');
+        }
+      }
+    }
+
+    // If we didn't get it from service data, use platform name (iOS sends it this way)
+    if (deviceName == 'Unknown Device' && result.device.platformName.isNotEmpty) {
+      deviceName = result.device.platformName;
+    }
 
     final discoveredDevice = DiscoveredBleDevice(
       device: result.device,
@@ -306,6 +324,7 @@ class BleTransferStrategy implements TransferStrategy {
     await _peripheralChannel.startAdvertising(
       metadata: _metadata!.toBytes(),
       chunks: chunkBytes,
+      senderName: _metadata!.senderName,
     );
   }
 
