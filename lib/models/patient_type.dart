@@ -21,11 +21,11 @@ extension PatientTypeExtension on PatientType {
   String get displayName {
     switch (this) {
       case PatientType.labor:
-        return 'Labor';
+        return 'L & D';
       case PatientType.postpartum:
-        return 'Postpartum';
+        return 'Post Partum';
       case PatientType.gynPostOp:
-        return 'GYN Post-op';
+        return 'GYN';
       case PatientType.consult:
         return 'Consult';
     }
@@ -34,7 +34,7 @@ extension PatientTypeExtension on PatientType {
   String get shortName {
     switch (this) {
       case PatientType.labor:
-        return 'L';
+        return 'L & D';
       case PatientType.postpartum:
         return 'PP';
       case PatientType.gynPostOp:

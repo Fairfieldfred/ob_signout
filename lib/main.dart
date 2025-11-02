@@ -17,6 +17,11 @@ void main() async {
   Hive.registerAdapter(PatientTypeAdapter());
   Hive.registerAdapter(PatientAdapter());
 
+  // TEMPORARY: Clear old data due to schema change
+  // Remove this after first run with new schema
+  // debugPrint('Clearing old patients box due to schema change...');
+  // await Hive.deleteBoxFromDisk('patients');
+
   // Open the patients box
   await Hive.openBox<Patient>('patients');
 
@@ -38,10 +43,7 @@ class ObSignoutApp extends StatelessWidget {
             brightness: Brightness.light,
           ),
           useMaterial3: true,
-          appBarTheme: const AppBarTheme(
-            elevation: 0,
-            centerTitle: true,
-          ),
+          appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
           floatingActionButtonTheme: const FloatingActionButtonThemeData(
             elevation: 4,
           ),
@@ -52,10 +54,7 @@ class ObSignoutApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
-          appBarTheme: const AppBarTheme(
-            elevation: 0,
-            centerTitle: true,
-          ),
+          appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
         ),
         themeMode: ThemeMode.system,
         home: const PatientListScreen(),

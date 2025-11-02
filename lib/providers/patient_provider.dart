@@ -67,7 +67,9 @@ class PatientProvider extends ChangeNotifier {
     int? age,
     int? gravida,
     int? para,
-    String? gestationalAge,
+    int? gestationalAgeWeeks,
+    int? gestationalAgeDays,
+    DateTime? gestationalAgeSetDate,
     Map<String, dynamic>? parameters,
   }) async {
     try {
@@ -81,7 +83,9 @@ class PatientProvider extends ChangeNotifier {
         age: age,
         gravida: gravida,
         para: para,
-        gestationalAge: gestationalAge?.trim(),
+        gestationalAgeWeeks: gestationalAgeWeeks,
+        gestationalAgeDays: gestationalAgeDays,
+        gestationalAgeSetDate: gestationalAgeSetDate,
         parameters: parameters ?? {},
       );
 

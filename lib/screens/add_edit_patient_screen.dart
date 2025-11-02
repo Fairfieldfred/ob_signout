@@ -8,10 +8,7 @@ import '../providers/patient_provider.dart';
 class AddEditPatientScreen extends StatefulWidget {
   final Patient? patient;
 
-  const AddEditPatientScreen({
-    super.key,
-    this.patient,
-  });
+  const AddEditPatientScreen({super.key, this.patient});
 
   bool get isEditing => patient != null;
 
@@ -26,7 +23,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   final _ageController = TextEditingController();
   final _gravidaController = TextEditingController();
   final _paraController = TextEditingController();
-  final _gestationalAgeController = TextEditingController();
+  final _gestationalWeeksController = TextEditingController();
+  final _gestationalDaysController = TextEditingController();
 
   PatientType _selectedType = PatientType.labor;
   bool _isLoading = false;
@@ -45,7 +43,10 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       _ageController.text = patient.age?.toString() ?? '';
       _gravidaController.text = patient.gravida?.toString() ?? '';
       _paraController.text = patient.para?.toString() ?? '';
-      _gestationalAgeController.text = patient.gestationalAge ?? '';
+      _gestationalWeeksController.text =
+          patient.gestationalAgeWeeks?.toString() ?? '';
+      _gestationalDaysController.text =
+          patient.gestationalAgeDays?.toString() ?? '';
       _selectedType = patient.type;
     }
   }
@@ -57,7 +58,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     _ageController.dispose();
     _gravidaController.dispose();
     _paraController.dispose();
-    _gestationalAgeController.dispose();
+    _gestationalWeeksController.dispose();
+    _gestationalDaysController.dispose();
     super.dispose();
   }
 
@@ -94,8 +96,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildPrivacyNotice(context),
-              const SizedBox(height: 24),
+              // _buildPrivacyNotice(context),
+              // const SizedBox(height: 24),
               _buildInitialsField(),
               const SizedBox(height: 16),
               _buildRoomNumberField(),
@@ -250,9 +252,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           children: [
             Text(
               'Demographics',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -291,9 +293,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           children: [
             Text(
               'Obstetric History',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Row(
@@ -346,16 +348,56 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _gestationalAgeController,
-              decoration: const InputDecoration(
-                labelText: 'Gestational Age',
-                hintText: 'e.g., 38w 2d, 32+5, 39 weeks',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.schedule_outlined),
-              ),
-              textCapitalization: TextCapitalization.none,
-              maxLength: 20,
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _gestationalWeeksController,
+                    decoration: const InputDecoration(
+                      labelText: 'GA Weeks',
+                      hintText: 'e.g., 38',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.schedule_outlined),
+                      suffixText: 'wk',
+                    ),
+                    keyboardType: TextInputType.number,
+                    maxLength: 2,
+                    validator: (value) {
+                      if (value != null && value.isNotEmpty) {
+                        final weeks = int.tryParse(value);
+                        if (weeks == null || weeks < 0 || weeks > 42) {
+                          return '0-42 only';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextFormField(
+                    controller: _gestationalDaysController,
+                    decoration: const InputDecoration(
+                      labelText: 'GA Days',
+                      hintText: 'e.g., 2',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.calendar_today_outlined),
+                      suffixText: 'd',
+                    ),
+                    keyboardType: TextInputType.number,
+                    maxLength: 1,
+                    validator: (value) {
+                      if (value != null && value.isNotEmpty) {
+                        final days = int.tryParse(value);
+                        if (days == null || days < 0 || days > 6) {
+                          return '0-6 only';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -387,7 +429,10 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       return;
     }
 
-    final patientProvider = Provider.of<PatientProvider>(context, listen: false);
+    final patientProvider = Provider.of<PatientProvider>(
+      context,
+      listen: false,
+    );
 
     setState(() {
       _isLoading = true;
@@ -396,10 +441,36 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     try {
       final initials = _initialsController.text.trim();
       final roomNumber = _roomNumberController.text.trim();
-      final age = _ageController.text.trim().isNotEmpty ? int.tryParse(_ageController.text.trim()) : null;
-      final gravida = _gravidaController.text.trim().isNotEmpty ? int.tryParse(_gravidaController.text.trim()) : null;
-      final para = _paraController.text.trim().isNotEmpty ? int.tryParse(_paraController.text.trim()) : null;
-      final gestationalAge = _gestationalAgeController.text.trim().isNotEmpty ? _gestationalAgeController.text.trim() : null;
+      final age = _ageController.text.trim().isNotEmpty
+          ? int.tryParse(_ageController.text.trim())
+          : null;
+      final gravida = _gravidaController.text.trim().isNotEmpty
+          ? int.tryParse(_gravidaController.text.trim())
+          : null;
+      final para = _paraController.text.trim().isNotEmpty
+          ? int.tryParse(_paraController.text.trim())
+          : null;
+      final gestationalWeeks =
+          _gestationalWeeksController.text.trim().isNotEmpty
+          ? int.tryParse(_gestationalWeeksController.text.trim())
+          : null;
+      final gestationalDays = _gestationalDaysController.text.trim().isNotEmpty
+          ? int.tryParse(_gestationalDaysController.text.trim())
+          : null;
+
+      // Set gestationalAgeSetDate only if both weeks and days are provided
+      DateTime? gestationalAgeSetDate;
+      if (gestationalWeeks != null && gestationalDays != null) {
+        // If editing and GA values haven't changed, keep the original set date
+        if (widget.isEditing &&
+            widget.patient!.gestationalAgeWeeks == gestationalWeeks &&
+            widget.patient!.gestationalAgeDays == gestationalDays) {
+          gestationalAgeSetDate = widget.patient!.gestationalAgeSetDate;
+        } else {
+          // New GA or changed GA - set to today
+          gestationalAgeSetDate = DateTime.now();
+        }
+      }
 
       // Check for room number conflicts
       final isRoomTaken = await patientProvider.isRoomNumberTaken(
@@ -429,7 +500,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           age: age,
           gravida: gravida,
           para: para,
-          gestationalAge: gestationalAge,
+          gestationalAgeWeeks: gestationalWeeks,
+          gestationalAgeDays: gestationalDays,
+          gestationalAgeSetDate: gestationalAgeSetDate,
         );
         await patientProvider.updatePatient(updatedPatient);
       } else {
@@ -441,7 +514,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           age: age,
           gravida: gravida,
           para: para,
-          gestationalAge: gestationalAge,
+          gestationalAgeWeeks: gestationalWeeks,
+          gestationalAgeDays: gestationalDays,
+          gestationalAgeSetDate: gestationalAgeSetDate,
         );
       }
 

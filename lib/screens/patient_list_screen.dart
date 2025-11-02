@@ -211,10 +211,53 @@ class _PatientListScreenState extends State<PatientListScreen> {
         itemCount: filteredPatients.length,
         itemBuilder: (context, index) {
           final patient = filteredPatients[index];
-          return PatientCard(
-            patient: patient,
-            onTap: () => _navigateToPatientDetail(context, patient),
-            onDelete: () => _deletePatient(context, patientProvider, patient),
+          return Dismissible(
+            key: Key(patient.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              color: Theme.of(context).colorScheme.error,
+              child: const Icon(
+                Icons.delete,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+            confirmDismiss: (direction) async {
+              return await showDialog<bool>(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: const Text('Delete Patient'),
+                    content: Text(
+                      'Are you sure you want to delete patient ${patient.initials} in room ${patient.roomNumber}?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                        ),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+            onDismissed: (direction) {
+              _deletePatient(context, patientProvider, patient);
+            },
+            child: PatientCard(
+              patient: patient,
+              onTap: () => _navigateToPatientDetail(context, patient),
+              showDeleteButton: false,
+            ),
           );
         },
       ),

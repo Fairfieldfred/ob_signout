@@ -36,7 +36,22 @@ class Patient extends HiveObject {
   int? para;
 
   @HiveField(10)
-  String? gestationalAge;
+  int? gestationalAgeWeeks;
+
+  @HiveField(11)
+  int? gestationalAgeDays;
+
+  @HiveField(12)
+  DateTime? gestationalAgeSetDate;
+
+  @HiveField(13)
+  bool isRounded;
+
+  @HiveField(14)
+  bool isDischarged;
+
+  @HiveField(15)
+  List<String>? laborStatuses; // For Labor patients: ["Ante", "Labor", "Induction", "TOLAC"]
 
   Patient({
     required this.id,
@@ -46,11 +61,17 @@ class Patient extends HiveObject {
     this.age,
     this.gravida,
     this.para,
-    this.gestationalAge,
+    this.gestationalAgeWeeks,
+    this.gestationalAgeDays,
+    this.gestationalAgeSetDate,
+    this.isRounded = false,
+    this.isDischarged = false,
+    List<String>? laborStatuses,
     Map<String, dynamic>? parameters,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : parameters = parameters ?? {},
+  })  : laborStatuses = laborStatuses ?? [],
+        parameters = parameters ?? {},
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -63,7 +84,12 @@ class Patient extends HiveObject {
       'age': age,
       'gravida': gravida,
       'para': para,
-      'gestationalAge': gestationalAge,
+      'gestationalAgeWeeks': gestationalAgeWeeks,
+      'gestationalAgeDays': gestationalAgeDays,
+      'gestationalAgeSetDate': gestationalAgeSetDate?.toIso8601String(),
+      'isRounded': isRounded,
+      'isDischarged': isDischarged,
+      'laborStatuses': laborStatuses,
       'parameters': parameters,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -82,7 +108,16 @@ class Patient extends HiveObject {
       age: json['age'] as int?,
       gravida: json['gravida'] as int?,
       para: json['para'] as int?,
-      gestationalAge: json['gestationalAge'] as String?,
+      gestationalAgeWeeks: json['gestationalAgeWeeks'] as int?,
+      gestationalAgeDays: json['gestationalAgeDays'] as int?,
+      gestationalAgeSetDate: json['gestationalAgeSetDate'] != null
+          ? DateTime.parse(json['gestationalAgeSetDate'] as String)
+          : null,
+      isRounded: json['isRounded'] as bool? ?? false,
+      isDischarged: json['isDischarged'] as bool? ?? false,
+      laborStatuses: json['laborStatuses'] != null
+          ? List<String>.from(json['laborStatuses'] as List)
+          : [],
       parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -97,7 +132,12 @@ class Patient extends HiveObject {
     int? age,
     int? gravida,
     int? para,
-    String? gestationalAge,
+    int? gestationalAgeWeeks,
+    int? gestationalAgeDays,
+    DateTime? gestationalAgeSetDate,
+    bool? isRounded,
+    bool? isDischarged,
+    List<String>? laborStatuses,
     Map<String, dynamic>? parameters,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -110,7 +150,12 @@ class Patient extends HiveObject {
       age: age ?? this.age,
       gravida: gravida ?? this.gravida,
       para: para ?? this.para,
-      gestationalAge: gestationalAge ?? this.gestationalAge,
+      gestationalAgeWeeks: gestationalAgeWeeks ?? this.gestationalAgeWeeks,
+      gestationalAgeDays: gestationalAgeDays ?? this.gestationalAgeDays,
+      gestationalAgeSetDate: gestationalAgeSetDate ?? this.gestationalAgeSetDate,
+      isRounded: isRounded ?? this.isRounded,
+      isDischarged: isDischarged ?? this.isDischarged,
+      laborStatuses: laborStatuses ?? List<String>.from(this.laborStatuses ?? []),
       parameters: parameters ?? Map<String, dynamic>.from(this.parameters),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
@@ -138,12 +183,72 @@ class Patient extends HiveObject {
     return age != null ? '${age}y' : '';
   }
 
+  /// Calculates current gestational age with auto-increment for Labor patients.
+  /// Returns (weeks, days) tuple. Returns null if GA not set.
+  (int, int)? get currentGestationalAge {
+    if (gestationalAgeWeeks == null || gestationalAgeDays == null || gestationalAgeSetDate == null) {
+      return null;
+    }
+
+    // Only increment for Labor patients
+    if (type != PatientType.labor) {
+      return (gestationalAgeWeeks!, gestationalAgeDays!);
+    }
+
+    // Calculate days elapsed since GA was set
+    final now = DateTime.now();
+    final setDate = DateTime(
+      gestationalAgeSetDate!.year,
+      gestationalAgeSetDate!.month,
+      gestationalAgeSetDate!.day,
+    );
+    final today = DateTime(now.year, now.month, now.day);
+    final daysElapsed = today.difference(setDate).inDays;
+
+    // Add elapsed days to original GA
+    int totalDays = gestationalAgeDays! + daysElapsed;
+    int totalWeeks = gestationalAgeWeeks!;
+
+    // Convert excess days to weeks
+    while (totalDays >= 7) {
+      totalWeeks++;
+      totalDays -= 7;
+    }
+
+    return (totalWeeks, totalDays);
+  }
+
   String get gestationalAgeString {
-    return gestationalAge?.isNotEmpty == true ? gestationalAge! : '';
+    final ga = currentGestationalAge;
+    if (ga == null) return '';
+
+    final (weeks, days) = ga;
+    return '${weeks}wk ${days}d';
+  }
+
+  /// Combined patient info string for card display: {}y G{}P{} @ {}wk {}d
+  String get combinedInfoString {
+    final parts = <String>[];
+
+    if (age != null) {
+      parts.add('${age}y');
+    }
+
+    if (gravida != null && para != null) {
+      parts.add('G$gravida P$para');
+    }
+
+    final ga = currentGestationalAge;
+    if (ga != null) {
+      final (weeks, days) = ga;
+      parts.add('@ ${weeks}wk ${days}d');
+    }
+
+    return parts.join(' ');
   }
 
   @override
   String toString() {
-    return 'Patient{id: $id, initials: $initials, roomNumber: $roomNumber, type: ${type.displayName}, age: $age, G$gravida P$para, GA: $gestationalAge}';
+    return 'Patient{id: $id, initials: $initials, roomNumber: $roomNumber, type: ${type.displayName}, age: $age, G$gravida P$para, GA: $gestationalAgeString}';
   }
 }

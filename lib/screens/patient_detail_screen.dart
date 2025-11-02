@@ -5,6 +5,7 @@ import '../models/patient.dart';
 import '../models/patient_type.dart';
 import '../providers/patient_provider.dart';
 import '../services/share_service.dart';
+import '../widgets/clinical_conditions_dialog.dart';
 import 'add_edit_patient_screen.dart';
 
 class PatientDetailScreen extends StatefulWidget {
@@ -157,30 +158,84 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getTypeColor(patient.type, theme.colorScheme),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    patient.type.displayName,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: _getTypeTextColor(patient.type, theme.colorScheme),
-                      fontWeight: FontWeight.bold,
+                InkWell(
+                  onTap: () => _showChangePatientTypeDialog(context, patient),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _getTypeColor(patient.type, theme.colorScheme),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      patient.type.displayName,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: _getTypeTextColor(patient.type, theme.colorScheme),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  'Created ${_formatDate(patient.createdAt)}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                // Status options on the right
+                if (patient.type == PatientType.labor)
+                  // Labor status selector for Labor patients
+                  _buildLaborStatusSelector(context, patient, theme)
+                else
+                  // Rounded and D/C checkboxes for non-Labor patients
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Rounded checkbox
+                      InkWell(
+                        onTap: () => _toggleRoundedStatus(context, patient),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Rounded',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Checkbox(
+                              value: patient.isRounded,
+                              onChanged: (_) => _toggleRoundedStatus(context, patient),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // D/C checkbox
+                      InkWell(
+                        onTap: () => _toggleDischargedStatus(context, patient),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'D/C',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Checkbox(
+                              value: patient.isDischarged,
+                              onChanged: (_) => _toggleDischargedStatus(context, patient),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -231,6 +286,49 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               _formatDateTime(patient.updatedAt),
               Icons.access_time,
             ),
+            // Clinical Parameters
+            if (patient.parameters.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.medical_information_outlined,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Clinical Conditions',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: patient.parameters.entries.map((param) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _formatClinicalParameter(param.key, param.value),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),
@@ -270,6 +368,37 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
+  Widget _buildLaborStatusSelector(
+    BuildContext context,
+    Patient patient,
+    ThemeData theme,
+  ) {
+    const laborStatuses = ['Ante', 'Labor', 'Induction', 'TOLAC'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: laborStatuses.map((status) {
+        final isSelected = patient.laborStatuses?.contains(status) ?? false;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: ChoiceChip(
+            label: Text(status),
+            selected: isSelected,
+            onSelected: (selected) {
+              _toggleLaborStatus(context, patient, status, selected);
+            },
+            labelStyle: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildParametersSection(
     BuildContext context,
     Patient patient,
@@ -290,130 +419,21 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             ),
             const Spacer(),
             IconButton(
-              icon: const Icon(Icons.add_circle_outline),
+              icon: const Icon(Icons.medical_information_outlined),
               onPressed: () => _addParameter(context, patient, provider),
-              tooltip: 'Add parameter',
+              tooltip: 'Manage clinical conditions',
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        if (patient.parameters.isEmpty)
-          _buildNoParametersState(context)
-        else
-          _buildParametersList(context, patient, provider),
-      ],
-    );
-  }
-
-  Widget _buildNoParametersState(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          children: [
-            Icon(
-              Icons.note_add_outlined,
-              size: 48,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No clinical parameters yet',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add clinical parameters like vitals, medications, or other relevant information.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildParametersList(
-    BuildContext context,
-    Patient patient,
-    PatientProvider provider,
-  ) {
-    final parameters = patient.parameters.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-
-    return Column(
-      children: parameters.map((param) {
-        return _buildParameterCard(
-          context,
-          param.key,
-          param.value,
-          patient,
-          provider,
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildParameterCard(
-    BuildContext context,
-    String key,
-    dynamic value,
-    Patient patient,
-    PatientProvider provider,
-  ) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        title: Text(
-          key,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w500,
+        const SizedBox(height: 8),
+        Text(
+          'Tap the icon above to manage clinical conditions',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontStyle: FontStyle.italic,
           ),
         ),
-        subtitle: Text(
-          _formatParameterValue(value),
-          style: theme.textTheme.bodyMedium,
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (action) {
-            if (action == 'edit') {
-              _editParameter(context, patient, provider, key, value);
-            } else if (action == 'delete') {
-              _deleteParameter(context, patient, provider, key);
-            }
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: Row(
-                children: [
-                  Icon(Icons.edit_outlined),
-                  SizedBox(width: 8),
-                  Text('Edit'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete_outline, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Delete', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 
@@ -453,11 +473,69 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return '${dateTime.month}/${dateTime.day}/${dateTime.year} $hour:${dateTime.minute.toString().padLeft(2, '0')} $period';
   }
 
+  String _formatClinicalParameter(String key, dynamic value) {
+    // Clinical conditions that should display without ": Yes"
+    const clinicalConditions = ['GHTN', 'CHTN', 'Pre-E', 'DM', 'GBS', 'Hyperemesis', 'Menorrhagia', 'TOA', 'Post-op', 'DVT/PE', 'Trauma', 'Cyst', 'Prolapse', 'Other'];
+
+    if (clinicalConditions.contains(key)) {
+      final valueStr = value?.toString() ?? '';
+
+      // For Pre-E with SF subtype
+      if (key == 'Pre-E' && valueStr == 'SF') {
+        return 'Pre-E w SF';
+      }
+
+      // For Pre-E without subtype or empty subtype
+      if (key == 'Pre-E' && (valueStr.isEmpty || valueStr == 'Yes')) {
+        return 'Pre-E';
+      }
+
+      // For Post-op, show as "s/p {subtype}"
+      if (key == 'Post-op' && valueStr.isNotEmpty && valueStr != 'Yes') {
+        return 's/p $valueStr';
+      }
+
+      // For Post-op without subtype
+      if (key == 'Post-op' && (valueStr.isEmpty || valueStr == 'Yes')) {
+        return 'Post-op';
+      }
+
+      // For TOA, show subtype if present
+      if (key == 'TOA' && valueStr.isNotEmpty && valueStr != 'Yes') {
+        return valueStr; // Display just the subtype (e.g., "s/p IR Drainage")
+      }
+
+      // For TOA without subtype
+      if (key == 'TOA' && (valueStr.isEmpty || valueStr == 'Yes')) {
+        return 'TOA';
+      }
+
+      // For DM and GBS, show with subtype if present
+      if ((key == 'DM' || key == 'GBS') && valueStr.isNotEmpty && valueStr != 'Yes') {
+        return '$key: $valueStr';
+      }
+
+      // For Other, show the custom text if present
+      if (key == 'Other' && valueStr.isNotEmpty && valueStr != 'Yes') {
+        return valueStr; // Display the custom text
+      }
+
+      // For all other clinical conditions, just show the code
+      return key;
+    }
+
+    // For non-clinical parameters, show key: value format
+    final formattedValue = _formatParameterValue(value);
+    return '$key: $formattedValue';
+  }
+
   String _formatParameterValue(dynamic value) {
     if (value == null) return 'N/A';
     if (value is bool) return value ? 'Yes' : 'No';
     if (value is DateTime) return _formatDateTime(value);
-    return value.toString();
+
+    final valueStr = value.toString();
+    return valueStr.length > 20 ? '${valueStr.substring(0, 20)}...' : valueStr;
   }
 
   Future<void> _addParameter(
@@ -465,15 +543,39 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     Patient patient,
     PatientProvider provider,
   ) async {
-    await _showParameterDialog(
-      context,
-      'Add Parameter',
-      null,
-      null,
-      (key, value) async {
-        await provider.updatePatientParameter(patient.id, key, value);
-      },
+    final result = await showDialog<Map<String, String?>>(
+      context: context,
+      builder: (context) => ClinicalConditionsDialog(
+        patientType: patient.type,
+        currentParameters: patient.parameters,
+      ),
     );
+
+    if (result != null) {
+      // Remove all clinical conditions first
+      final conditionCodes = [
+        'GHTN',
+        'CHTN',
+        'Pre-E',
+        'DM',
+        'GBS',
+        'Hyperemesis',
+        'Menorrhagia',
+        'TOA',
+        'Post-op',
+      ];
+      for (final code in conditionCodes) {
+        if (patient.parameters.containsKey(code)) {
+          await provider.removePatientParameter(patient.id, code);
+        }
+      }
+
+      // Add selected conditions
+      for (final entry in result.entries) {
+        final value = entry.value?.isNotEmpty == true ? entry.value! : 'Yes';
+        await provider.updatePatientParameter(patient.id, entry.key, value);
+      }
+    }
   }
 
   Future<void> _editParameter(
@@ -716,6 +818,319 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             ),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _toggleRoundedStatus(BuildContext context, Patient patient) async {
+    try {
+      final provider = Provider.of<PatientProvider>(context, listen: false);
+      await provider.updatePatient(
+        patient.copyWith(isRounded: !patient.isRounded),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update status: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleDischargedStatus(BuildContext context, Patient patient) async {
+    try {
+      final provider = Provider.of<PatientProvider>(context, listen: false);
+      await provider.updatePatient(
+        patient.copyWith(isDischarged: !patient.isDischarged),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update status: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleLaborStatus(
+    BuildContext context,
+    Patient patient,
+    String status,
+    bool selected,
+  ) async {
+    try {
+      final provider = Provider.of<PatientProvider>(context, listen: false);
+      final currentStatuses = List<String>.from(patient.laborStatuses ?? []);
+
+      if (selected) {
+        // Add status if not already present
+        if (!currentStatuses.contains(status)) {
+          currentStatuses.add(status);
+        }
+      } else {
+        // Remove status
+        currentStatuses.remove(status);
+      }
+
+      await provider.updatePatient(
+        patient.copyWith(laborStatuses: currentStatuses),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update labor status: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showChangePatientTypeDialog(BuildContext context, Patient patient) async {
+    final result = await showDialog<PatientType>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Patient Type'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: PatientType.values.map((type) {
+            return RadioListTile<PatientType>(
+              title: Text(type.displayName),
+              value: type,
+              groupValue: patient.type,
+              onChanged: (value) {
+                Navigator.pop(context, value);
+              },
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result != patient.type && context.mounted) {
+      // Check if transitioning from Labor to Postpartum
+      if (patient.type == PatientType.labor && result == PatientType.postpartum) {
+        await _showDeliveryDetailsDialog(context, patient, result);
+      } else {
+        // Simple type change without delivery details
+        await _changePatientType(context, patient, result);
+      }
+    }
+  }
+
+  Future<void> _showDeliveryDetailsDialog(
+    BuildContext context,
+    Patient patient,
+    PatientType newType,
+  ) async {
+    DateTime deliveryDate = DateTime.now();
+    TimeOfDay deliveryTime = TimeOfDay.now();
+    String? deliveryMode;
+    bool hasBLS = false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Delivery Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Date picker
+                ListTile(
+                  title: const Text('Delivery Date'),
+                  subtitle: Text('${deliveryDate.month}/${deliveryDate.day}/${deliveryDate.year}'),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: deliveryDate,
+                      firstDate: DateTime.now().subtract(const Duration(days: 7)),
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) {
+                      setState(() => deliveryDate = date);
+                    }
+                  },
+                ),
+                // Time picker
+                ListTile(
+                  title: const Text('Delivery Time'),
+                  subtitle: Text('${deliveryTime.hour}:00'),
+                  trailing: const Icon(Icons.access_time),
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: deliveryTime,
+                      builder: (context, child) {
+                        return MediaQuery(
+                          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (time != null) {
+                      setState(() => deliveryTime = time);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text('Delivery Mode:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                // Delivery mode options
+                RadioListTile<String>(
+                  title: const Text('SVD'),
+                  value: 'SVD',
+                  groupValue: deliveryMode,
+                  onChanged: (value) => setState(() => deliveryMode = value),
+                ),
+                RadioListTile<String>(
+                  title: const Text('VAVD'),
+                  value: 'VAVD',
+                  groupValue: deliveryMode,
+                  onChanged: (value) => setState(() => deliveryMode = value),
+                ),
+                RadioListTile<String>(
+                  title: const Text('C/S'),
+                  value: 'C/S',
+                  groupValue: deliveryMode,
+                  onChanged: (value) => setState(() => deliveryMode = value),
+                ),
+                RadioListTile<String>(
+                  title: const Text('Repeat C/S'),
+                  value: 'Repeat C/S',
+                  groupValue: deliveryMode,
+                  onChanged: (value) => setState(() => deliveryMode = value),
+                ),
+                const SizedBox(height: 8),
+                // BLS checkbox
+                CheckboxListTile(
+                  title: const Text('BLS'),
+                  value: hasBLS,
+                  onChanged: (value) => setState(() => hasBLS = value ?? false),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: deliveryMode != null
+                  ? () => Navigator.pop(context, true)
+                  : null,
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && context.mounted) {
+      // Combine delivery mode with BLS if checked
+      String deliveryInfo = deliveryMode!;
+      if (hasBLS) {
+        deliveryInfo += ' + BLS';
+      }
+
+      // Create DateTime with hour (no minutes)
+      final deliveryDateTime = DateTime(
+        deliveryDate.year,
+        deliveryDate.month,
+        deliveryDate.day,
+        deliveryTime.hour,
+      );
+
+      // Update patient with new type and delivery details
+      await _changePatientTypeWithDelivery(
+        context,
+        patient,
+        newType,
+        deliveryDateTime,
+        deliveryInfo,
+      );
+    }
+  }
+
+  Future<void> _changePatientType(
+    BuildContext context,
+    Patient patient,
+    PatientType newType,
+  ) async {
+    try {
+      final provider = Provider.of<PatientProvider>(context, listen: false);
+      await provider.updatePatient(
+        patient.copyWith(type: newType),
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Changed to ${newType.displayName}')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to change patient type: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _changePatientTypeWithDelivery(
+    BuildContext context,
+    Patient patient,
+    PatientType newType,
+    DateTime deliveryDateTime,
+    String deliveryMode,
+  ) async {
+    try {
+      final provider = Provider.of<PatientProvider>(context, listen: false);
+
+      // Add delivery details to parameters
+      final updatedParameters = Map<String, dynamic>.from(patient.parameters);
+      updatedParameters['Delivery Date'] = deliveryDateTime.toIso8601String();
+      updatedParameters['Delivery Mode'] = deliveryMode;
+
+      await provider.updatePatient(
+        patient.copyWith(
+          type: newType,
+          parameters: updatedParameters,
+        ),
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Changed to ${newType.displayName} with delivery details')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to change patient type: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
       }
     }
   }

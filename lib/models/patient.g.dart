@@ -24,7 +24,12 @@ class PatientAdapter extends TypeAdapter<Patient> {
       age: fields[7] as int?,
       gravida: fields[8] as int?,
       para: fields[9] as int?,
-      gestationalAge: fields[10] as String?,
+      gestationalAgeWeeks: fields[10] as int?,
+      gestationalAgeDays: fields[11] as int?,
+      gestationalAgeSetDate: fields[12] as DateTime?,
+      isRounded: fields[13] as bool,
+      isDischarged: fields[14] as bool,
+      laborStatuses: (fields[15] as List?)?.cast<String>(),
       parameters: (fields[4] as Map?)?.cast<String, dynamic>(),
       createdAt: fields[5] as DateTime?,
       updatedAt: fields[6] as DateTime?,
@@ -34,7 +39,7 @@ class PatientAdapter extends TypeAdapter<Patient> {
   @override
   void write(BinaryWriter writer, Patient obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +61,17 @@ class PatientAdapter extends TypeAdapter<Patient> {
       ..writeByte(9)
       ..write(obj.para)
       ..writeByte(10)
-      ..write(obj.gestationalAge);
+      ..write(obj.gestationalAgeWeeks)
+      ..writeByte(11)
+      ..write(obj.gestationalAgeDays)
+      ..writeByte(12)
+      ..write(obj.gestationalAgeSetDate)
+      ..writeByte(13)
+      ..write(obj.isRounded)
+      ..writeByte(14)
+      ..write(obj.isDischarged)
+      ..writeByte(15)
+      ..write(obj.laborStatuses);
   }
 
   @override
