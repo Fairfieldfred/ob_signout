@@ -43,10 +43,24 @@ class BlePeripheralChannel {
     required List<Uint8List> chunks,
     required String senderName,
   }) async {
-    debugPrint('[BLE Channel] startAdvertising called with ${chunks.length} chunks');
-    debugPrint('[BLE Channel] metadata length: ${metadata.length} bytes');
-    debugPrint('[BLE Channel] sender name: $senderName');
+    debugPrint('[BLE Channel] ====== PREPARING TO SEND ======');
+    debugPrint('[BLE Channel] Total chunks to send: ${chunks.length}');
+    debugPrint('[BLE Channel] Metadata length: ${metadata.length} bytes');
+    debugPrint('[BLE Channel] Sender name: $senderName');
+
+    // Log individual chunk sizes
+    int totalChunkBytes = 0;
+    for (int i = 0; i < chunks.length; i++) {
+      final chunkSize = chunks[i].length;
+      totalChunkBytes += chunkSize;
+      debugPrint('[BLE Channel] Chunk $i: $chunkSize bytes');
+    }
+
+    debugPrint('[BLE Channel] Total data in chunks: $totalChunkBytes bytes');
+    debugPrint('[BLE Channel] Average chunk size: ${(totalChunkBytes / chunks.length).toStringAsFixed(1)} bytes');
     debugPrint('[BLE Channel] About to invoke platform method...');
+    debugPrint('[BLE Channel] ==============================');
+
     try {
       final result = await _channel.invokeMethod('startAdvertising', {
         'metadata': metadata,

@@ -249,19 +249,24 @@ class BlePeripheralManager: NSObject {
         guard let central = subscribedCentral,
               let characteristic = dataChunkCharacteristic,
               currentChunkIndex < chunks.count else {
+            NSLog("[BLE] sendNextChunk guard failed - central: \(subscribedCentral != nil), char: \(dataChunkCharacteristic != nil), index: \(currentChunkIndex)/\(chunks.count)")
             return
         }
 
         let chunkData = chunks[currentChunkIndex]
+        NSLog("[BLE] Sending chunk \(currentChunkIndex + 1)/\(chunks.count) - size: \(chunkData.count) bytes")
         let success = peripheralManager?.updateValue(chunkData, for: characteristic, onSubscribedCentrals: [central]) ?? false
 
         if success {
+            NSLog("[BLE] Chunk \(currentChunkIndex + 1) sent successfully")
             currentChunkIndex += 1
 
             // Check if transfer is complete
             if currentChunkIndex >= chunks.count {
+                NSLog("[BLE] ====== ALL CHUNKS SENT ======")
+                NSLog("[BLE] Transfer complete - sent \(currentChunkIndex) chunks")
                 onTransferComplete?()
-                // Note: Don't also send onStateChanged("complete") - that would be redundant
+                onStateChanged?("complete")
             } else {
                 // Send next chunk asynchronously to avoid stack overflow
                 DispatchQueue.main.async { [weak self] in
@@ -269,6 +274,7 @@ class BlePeripheralManager: NSObject {
                 }
             }
         } else {
+            NSLog("[BLE] Chunk send failed (queue full), waiting for peripheralManagerIsReady callback")
             // If updateValue returns false, the queue is full
             // We'll be called again in peripheralManagerIsReady(toUpdateSubscribers:)
         }
@@ -429,10 +435,21 @@ extension BlePeripheralManager: CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+        NSLog("[BLE] Central unsubscribed from characteristic: \(characteristic.uuid)")
         if characteristic.uuid == dataChunkCharUUID {
             if subscribedCentral?.identifier == central.identifier {
+                NSLog("[BLE] Subscribed central disconnected. Current chunk: \(currentChunkIndex)/\(chunks.count)")
                 subscribedCentral = nil
-                onStateChanged?("unsubscribed")
+
+                // Check if transfer was complete before disconnect
+                if currentChunkIndex >= chunks.count {
+                    NSLog("[BLE] All chunks were sent, treating disconnect as successful completion")
+                    onTransferComplete?()
+                    onStateChanged?("complete")
+                } else {
+                    NSLog("[BLE] Transfer incomplete - only \(currentChunkIndex) of \(chunks.count) chunks sent")
+                    onStateChanged?("unsubscribed")
+                }
             }
         }
     }

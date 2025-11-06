@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,17 +5,11 @@ import 'package:provider/provider.dart';
 import '../models/patient.dart';
 import '../models/patient_type.dart';
 import '../providers/patient_provider.dart';
-import '../services/share_service.dart';
 import '../services/transfer_manager.dart';
-import '../services/transfer_strategy.dart';
 import '../widgets/patient_card.dart';
-import '../widgets/transfer_method_dialog.dart';
 import 'add_edit_patient_screen.dart';
 import 'ble_receive_screen.dart';
 import 'ble_transfer_screen.dart';
-import 'import_preview_screen.dart';
-import 'nearby_receive_screen.dart';
-import 'nearby_transfer_screen.dart';
 import 'patient_detail_screen.dart';
 
 class PatientListScreen extends StatefulWidget {
@@ -69,37 +62,15 @@ class _PatientListScreenState extends State<PatientListScreen> {
         ],
       ),
       actions: [
-        PopupMenuButton<String>(
+        IconButton(
           icon: const Icon(Icons.file_download_outlined),
-          tooltip: 'Import patients',
-          onSelected: (value) => _handleImportOption(context, value),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'import_paste',
-              child: Row(
-                children: [
-                  Icon(Icons.paste),
-                  SizedBox(width: 8),
-                  Text('Paste data'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'import_nearby',
-              child: Row(
-                children: [
-                  Icon(Icons.share),
-                  SizedBox(width: 8),
-                  Text('Receive via nearby'),
-                ],
-              ),
-            ),
-          ],
+          tooltip: 'Receive via Bluetooth',
+          onPressed: () => _navigateToBleReceive(context),
         ),
         if (patientProvider.totalPatientCount > 0) ...[
           IconButton(
             icon: Icon(Platform.isIOS ? Icons.ios_share : Icons.share),
-            tooltip: 'Smart Share',
+            tooltip: 'Share via Bluetooth',
             onPressed: () => _smartShare(context, patientProvider),
           ),
           PopupMenuButton<String>(
@@ -437,7 +408,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
   }
 
 
-  /// Smart share - shows transfer method dialog and handles the selected method.
+  /// Share patients via Bluetooth - prompts for sender name then opens BLE transfer screen.
   Future<void> _smartShare(
     BuildContext context,
     PatientProvider patientProvider,
@@ -454,117 +425,31 @@ class _PatientListScreenState extends State<PatientListScreen> {
         return;
       }
 
-      // Calculate estimated data size
-      final jsonData = ShareService.createObsFileData(patients, 'Sender', null);
-      final dataSize = utf8.encode(jsonData).length;
-
-      // Show transfer method dialog
-      final selectedMethod = await TransferMethodDialog.show(
-        context: context,
-        transferManager: _transferManager,
-        estimatedDataSizeBytes: dataSize,
-      );
-
-      if (selectedMethod == null || !context.mounted) return;
-
       // Get sender name
       final senderName = await _showSenderNameDialog(context);
       if (senderName == null || !context.mounted) return;
 
-      // Handle the selected method
-      await _executeTransfer(
+      // Navigate directly to Bluetooth transfer screen
+      Navigator.push(
         context,
-        selectedMethod,
-        patients,
-        senderName,
+        MaterialPageRoute(
+          builder: (context) => BleTransferScreen(
+            patients: patients,
+            senderName: senderName,
+          ),
+        ),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Smart share failed: $e'),
+            content: Text('Share failed: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
     }
   }
-
-  /// Executes the transfer using the selected method.
-  Future<void> _executeTransfer(
-    BuildContext context,
-    TransferMethod method,
-    List<Patient> patients,
-    String senderName,
-  ) async {
-    try {
-      if (!context.mounted) return;
-
-      // For WiFi transfer, navigate to the existing screen
-      if (method == TransferMethod.wifi) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => NearbyTransferScreen(
-              patients: patients,
-              senderName: senderName,
-            ),
-          ),
-        );
-        return;
-      }
-
-      // For Bluetooth transfer, navigate to the BLE screen
-      if (method == TransferMethod.bluetooth) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BleTransferScreen(
-              patients: patients,
-              senderName: senderName,
-            ),
-          ),
-        );
-        return;
-      }
-
-      // For AirDrop and Nearby Share, use the transfer manager
-      final result = await _transferManager.send(
-        method: method,
-        patients: patients,
-        senderName: senderName,
-        notes: 'Patient signout data from ${DateTime.now().month}/${DateTime.now().day}/${DateTime.now().year}',
-      );
-
-      if (!context.mounted) return;
-
-      if (result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${method.displayName} share initiated'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.errorMessage ?? 'Transfer failed'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Transfer failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
-
 
   Future<String?> _showSenderNameDialog(BuildContext context) async {
     final controller = TextEditingController();
@@ -617,106 +502,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
     }
   }
 
-  Future<void> _handleImportOption(BuildContext context, String value) async {
-    switch (value) {
-      case 'import_paste':
-        _showPasteDataDialog(context);
-        break;
-      case 'import_nearby':
-        _navigateToNearbyReceive(context);
-        break;
-    }
-  }
-
-  Future<void> _showPasteDataDialog(BuildContext context) async {
-    final controller = TextEditingController();
-
-    try {
-      final result = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Paste Patient Data'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Paste the patient data JSON here:'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  hintText: 'Paste JSON data here...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 10,
-                minLines: 5,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final data = controller.text.trim();
-                if (data.isNotEmpty) {
-                  Navigator.pop(context, data);
-                }
-              },
-              child: const Text('Import'),
-            ),
-          ],
-        ),
-      );
-
-      if (result != null && context.mounted) {
-        _processImportData(context, result);
-      }
-    } finally {
-      // Use a post-frame callback to dispose after the current frame
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.dispose();
-      });
-    }
-  }
-
-  Future<void> _processImportData(BuildContext context, String jsonData) async {
-    try {
-      final importResult = ShareService.parseObsData(jsonData);
-
-      if (!importResult.success) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(importResult.error ?? 'Import failed'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-        return;
-      }
-
-      if (context.mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                ImportPreviewScreen(importResult: importResult),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to process import data: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _handleMenuSelection(
     BuildContext context,
@@ -779,52 +564,12 @@ class _PatientListScreenState extends State<PatientListScreen> {
   }
 
 
-  Future<void> _navigateToNearbyReceive(BuildContext context) async {
+  Future<void> _navigateToBleReceive(BuildContext context) async {
     try {
-      // Show dialog to choose receive method
-      final method = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Choose Receive Method'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.wifi),
-                title: const Text('WiFi'),
-                subtitle: const Text('Faster, requires network'),
-                onTap: () => Navigator.pop(context, 'wifi'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.bluetooth),
-                title: const Text('Bluetooth'),
-                subtitle: const Text('Slower, works offline'),
-                onTap: () => Navigator.pop(context, 'bluetooth'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const BleReceiveScreen()),
       );
-
-      if (method == null || !context.mounted) return;
-
-      if (method == 'wifi') {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const NearbyReceiveScreen()),
-        );
-      } else if (method == 'bluetooth') {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const BleReceiveScreen()),
-        );
-      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

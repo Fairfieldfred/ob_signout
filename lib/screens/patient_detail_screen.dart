@@ -11,10 +11,7 @@ import 'add_edit_patient_screen.dart';
 class PatientDetailScreen extends StatefulWidget {
   final String patientId;
 
-  const PatientDetailScreen({
-    super.key,
-    required this.patientId,
-  });
+  const PatientDetailScreen({super.key, required this.patientId});
 
   @override
   State<PatientDetailScreen> createState() => _PatientDetailScreenState();
@@ -23,11 +20,13 @@ class PatientDetailScreen extends StatefulWidget {
 class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final _parameterKeyController = TextEditingController();
   final _parameterValueController = TextEditingController();
+  final _notesController = TextEditingController();
 
   @override
   void dispose() {
     _parameterKeyController.dispose();
     _parameterValueController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -133,7 +132,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
-  Widget _buildBody(BuildContext context, Patient patient, PatientProvider provider) {
+  Widget _buildBody(
+    BuildContext context,
+    Patient patient,
+    PatientProvider provider,
+  ) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -142,6 +145,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           _buildPatientInfo(context, patient),
           const SizedBox(height: 24),
           _buildParametersSection(context, patient, provider),
+          const SizedBox(height: 24),
+          _buildNotesSection(context, patient, provider),
         ],
       ),
     );
@@ -173,7 +178,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     child: Text(
                       patient.type.displayName,
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: _getTypeTextColor(patient.type, theme.colorScheme),
+                        color: _getTypeTextColor(
+                          patient.type,
+                          theme.colorScheme,
+                        ),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -205,8 +213,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                             ),
                             Checkbox(
                               value: patient.isRounded,
-                              onChanged: (_) => _toggleRoundedStatus(context, patient),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (_) =>
+                                  _toggleRoundedStatus(context, patient),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
                             ),
                           ],
@@ -219,7 +229,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'D/C',
+                              'D/C\'d',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                                 fontWeight: FontWeight.w500,
@@ -227,8 +237,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                             ),
                             Checkbox(
                               value: patient.isDischarged,
-                              onChanged: (_) => _toggleDischargedStatus(context, patient),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (_) =>
+                                  _toggleDischargedStatus(context, patient),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
                             ),
                           ],
@@ -314,7 +326,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 runSpacing: 4,
                 children: patient.parameters.entries.map((param) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(4),
@@ -345,11 +360,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 18,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(width: 8),
         Text(
           '$label:',
@@ -437,6 +448,55 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
+  Widget _buildNotesSection(
+    BuildContext context,
+    Patient patient,
+    PatientProvider provider,
+  ) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Notes',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.edit_note),
+              onPressed: () => _editNotes(context, patient, provider),
+              tooltip: 'Edit notes',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (patient.notes == null || patient.notes!.isEmpty)
+          Text(
+            'No notes yet. Tap the icon above to add notes.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                patient.notes!,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Color _getTypeColor(PatientType type, ColorScheme colorScheme) {
     switch (type) {
       case PatientType.labor:
@@ -468,14 +528,31 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   String _formatDateTime(DateTime dateTime) {
-    final hour = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
+    final hour = dateTime.hour > 12
+        ? dateTime.hour - 12
+        : (dateTime.hour == 0 ? 12 : dateTime.hour);
     final period = dateTime.hour >= 12 ? 'PM' : 'AM';
     return '${dateTime.month}/${dateTime.day}/${dateTime.year} $hour:${dateTime.minute.toString().padLeft(2, '0')} $period';
   }
 
   String _formatClinicalParameter(String key, dynamic value) {
     // Clinical conditions that should display without ": Yes"
-    const clinicalConditions = ['GHTN', 'CHTN', 'Pre-E', 'DM', 'GBS', 'Hyperemesis', 'Menorrhagia', 'TOA', 'Post-op', 'DVT/PE', 'Trauma', 'Cyst', 'Prolapse', 'Other'];
+    const clinicalConditions = [
+      'GHTN',
+      'CHTN',
+      'Pre-E',
+      'DM',
+      'GBS',
+      'Hyperemesis',
+      'Menorrhagia',
+      'TOA',
+      'Post-op',
+      'DVT/PE',
+      'Trauma',
+      'Cyst',
+      'Prolapse',
+      'Other',
+    ];
 
     if (clinicalConditions.contains(key)) {
       final valueStr = value?.toString() ?? '';
@@ -511,7 +588,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       }
 
       // For DM and GBS, show with subtype if present
-      if ((key == 'DM' || key == 'GBS') && valueStr.isNotEmpty && valueStr != 'Yes') {
+      if ((key == 'DM' || key == 'GBS') &&
+          valueStr.isNotEmpty &&
+          valueStr != 'Yes') {
         return '$key: $valueStr';
       }
 
@@ -651,9 +730,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 Navigator.pop(context, true);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please fill in both fields'),
-                  ),
+                  const SnackBar(content: Text('Please fill in both fields')),
                 );
               }
             },
@@ -670,9 +747,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       try {
         await onSave(key, value);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Parameter saved')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Parameter saved')));
         }
       } catch (e) {
         if (context.mounted) {
@@ -718,15 +795,74 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       try {
         await provider.removePatientParameter(patient.id, key);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Parameter deleted')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Parameter deleted')));
         }
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete parameter: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _editNotes(
+    BuildContext context,
+    Patient patient,
+    PatientProvider provider,
+  ) async {
+    _notesController.text = patient.notes ?? '';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Notes'),
+        content: TextField(
+          controller: _notesController,
+          decoration: const InputDecoration(
+            labelText: 'Notes',
+            hintText: 'Enter clinical notes here...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 8,
+          minLines: 5,
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final notes = _notesController.text.trim();
+      try {
+        await provider.updatePatient(
+          patient.copyWith(notes: notes.isEmpty ? null : notes),
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Notes saved')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to save notes: $e'),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -822,7 +958,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
-  Future<void> _toggleRoundedStatus(BuildContext context, Patient patient) async {
+  Future<void> _toggleRoundedStatus(
+    BuildContext context,
+    Patient patient,
+  ) async {
     try {
       final provider = Provider.of<PatientProvider>(context, listen: false);
       await provider.updatePatient(
@@ -840,7 +979,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
-  Future<void> _toggleDischargedStatus(BuildContext context, Patient patient) async {
+  Future<void> _toggleDischargedStatus(
+    BuildContext context,
+    Patient patient,
+  ) async {
     try {
       final provider = Provider.of<PatientProvider>(context, listen: false);
       await provider.updatePatient(
@@ -893,7 +1035,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
-  Future<void> _showChangePatientTypeDialog(BuildContext context, Patient patient) async {
+  Future<void> _showChangePatientTypeDialog(
+    BuildContext context,
+    Patient patient,
+  ) async {
     final result = await showDialog<PatientType>(
       context: context,
       builder: (context) => AlertDialog(
@@ -922,7 +1067,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     if (result != null && result != patient.type && context.mounted) {
       // Check if transitioning from Labor to Postpartum
-      if (patient.type == PatientType.labor && result == PatientType.postpartum) {
+      if (patient.type == PatientType.labor &&
+          result == PatientType.postpartum) {
         await _showDeliveryDetailsDialog(context, patient, result);
       } else {
         // Simple type change without delivery details
@@ -954,13 +1100,17 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 // Date picker
                 ListTile(
                   title: const Text('Delivery Date'),
-                  subtitle: Text('${deliveryDate.month}/${deliveryDate.day}/${deliveryDate.year}'),
+                  subtitle: Text(
+                    '${deliveryDate.month}/${deliveryDate.day}/${deliveryDate.year}',
+                  ),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
                     final date = await showDatePicker(
                       context: context,
                       initialDate: deliveryDate,
-                      firstDate: DateTime.now().subtract(const Duration(days: 7)),
+                      firstDate: DateTime.now().subtract(
+                        const Duration(days: 7),
+                      ),
                       lastDate: DateTime.now(),
                     );
                     if (date != null) {
@@ -979,7 +1129,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       initialTime: deliveryTime,
                       builder: (context, child) {
                         return MediaQuery(
-                          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                          data: MediaQuery.of(
+                            context,
+                          ).copyWith(alwaysUse24HourFormat: false),
                           child: child!,
                         );
                       },
@@ -990,7 +1142,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                const Text('Delivery Mode:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Delivery Mode:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 // Delivery mode options
                 RadioListTile<String>(
@@ -1076,9 +1231,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   ) async {
     try {
       final provider = Provider.of<PatientProvider>(context, listen: false);
-      await provider.updatePatient(
-        patient.copyWith(type: newType),
-      );
+      await provider.updatePatient(patient.copyWith(type: newType));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Changed to ${newType.displayName}')),
@@ -1112,15 +1265,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       updatedParameters['Delivery Mode'] = deliveryMode;
 
       await provider.updatePatient(
-        patient.copyWith(
-          type: newType,
-          parameters: updatedParameters,
-        ),
+        patient.copyWith(type: newType, parameters: updatedParameters),
       );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Changed to ${newType.displayName} with delivery details')),
+          SnackBar(
+            content: Text(
+              'Changed to ${newType.displayName} with delivery details',
+            ),
+          ),
         );
       }
     } catch (e) {

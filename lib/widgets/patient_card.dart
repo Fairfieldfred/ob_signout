@@ -92,23 +92,45 @@ class PatientCard extends StatelessWidget {
                             if (patient.type == PatientType.labor &&
                                 patient.laborStatuses != null &&
                                 patient.laborStatuses!.isNotEmpty)
-                              ...patient.laborStatuses!.map((status) => Container(
+                              ...patient.laborStatuses!.map(
+                                (status) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.onPrimaryContainer,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            // Post-delivery day for Postpartum patients (inline after initials)
+                            if (patient.type == PatientType.postpartum &&
+                                patient.postDeliveryDayString != null)
+                              Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 6,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colorScheme.primaryContainer,
+                                  color: colorScheme.secondaryContainer,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  status,
+                                  patient.postDeliveryDayString!,
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: colorScheme.onPrimaryContainer,
+                                    color: colorScheme.onSecondaryContainer,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              )),
+                              ),
                           ],
                         ),
                         // Second line: Age, G/P, GA (always on second line)
@@ -135,51 +157,51 @@ class PatientCard extends StatelessWidget {
                         // Rounded status box
                         if (patient.isRounded)
                           Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.2),
-                            border: Border.all(
-                              color: Colors.green.shade700,
-                              width: 1,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
                             ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Rounded',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.bold,
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.2),
+                              border: Border.all(
+                                color: Colors.green.shade700,
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
                             ),
-                          ),
-                        ),
-                      if (patient.isRounded && patient.isDischarged)
-                        const SizedBox(height: 4),
-                      // Discharged status box
-                      if (patient.isDischarged)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.2),
-                            border: Border.all(
-                              color: Colors.blue.shade700,
-                              width: 1,
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'D/C',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.blue.shade700,
-                              fontWeight: FontWeight.bold,
+                            child: Text(
+                              'Rounded',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
+                        if (patient.isRounded && patient.isDischarged)
+                          const SizedBox(height: 4),
+                        // Discharged status box
+                        if (patient.isDischarged)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.2),
+                              border: Border.all(
+                                color: Colors.blue.shade700,
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'D/C\'d',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -201,6 +223,11 @@ class PatientCard extends StatelessWidget {
               if (patient.parameters.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 _buildParametersPreview(context),
+              ],
+              // Notes Preview
+              if (patient.notes != null && patient.notes!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildNotesPreview(context),
               ],
               // Last Updated
               // const SizedBox(height: 8),
@@ -231,8 +258,13 @@ class PatientCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // Show all parameters
-    final allParams = patient.parameters.entries.toList();
+    // Show all parameters except Delivery Date and Delivery Mode
+    final allParams = patient.parameters.entries
+        .where(
+          (param) =>
+              param.key != 'Delivery Date' && param.key != 'Delivery Mode',
+        )
+        .toList();
 
     return Wrap(
       spacing: 8,
@@ -252,6 +284,50 @@ class PatientCard extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildNotesPreview(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // Truncate notes if they're too long
+    final notesText = patient.notes!;
+    final displayText = notesText.length > 100
+        ? '${notesText.substring(0, 100)}...'
+        : notesText;
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.note_outlined,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              displayText,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontStyle: FontStyle.italic,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -283,7 +359,22 @@ class PatientCard extends StatelessWidget {
 
   String _formatClinicalParameter(String key, dynamic value) {
     // Clinical conditions that should display without ": Yes"
-    const clinicalConditions = ['GHTN', 'CHTN', 'Pre-E', 'DM', 'GBS', 'Hyperemesis', 'Menorrhagia', 'TOA', 'Post-op', 'DVT/PE', 'Trauma', 'Cyst', 'Prolapse', 'Other'];
+    const clinicalConditions = [
+      'GHTN',
+      'CHTN',
+      'Pre-E',
+      'DM',
+      'GBS',
+      'Hyperemesis',
+      'Menorrhagia',
+      'TOA',
+      'Post-op',
+      'DVT/PE',
+      'Trauma',
+      'Cyst',
+      'Prolapse',
+      'Other',
+    ];
 
     if (clinicalConditions.contains(key)) {
       final valueStr = value?.toString() ?? '';
@@ -319,7 +410,9 @@ class PatientCard extends StatelessWidget {
       }
 
       // For DM and GBS, show with subtype if present
-      if ((key == 'DM' || key == 'GBS') && valueStr.isNotEmpty && valueStr != 'Yes') {
+      if ((key == 'DM' || key == 'GBS') &&
+          valueStr.isNotEmpty &&
+          valueStr != 'Yes') {
         return '$key: $valueStr';
       }
 

@@ -53,6 +53,9 @@ class Patient extends HiveObject {
   @HiveField(15)
   List<String>? laborStatuses; // For Labor patients: ["Ante", "Labor", "Induction", "TOLAC"]
 
+  @HiveField(16)
+  String? notes; // Clinical notes for the patient
+
   Patient({
     required this.id,
     required this.initials,
@@ -67,6 +70,7 @@ class Patient extends HiveObject {
     this.isRounded = false,
     this.isDischarged = false,
     List<String>? laborStatuses,
+    this.notes,
     Map<String, dynamic>? parameters,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -90,6 +94,7 @@ class Patient extends HiveObject {
       'isRounded': isRounded,
       'isDischarged': isDischarged,
       'laborStatuses': laborStatuses,
+      'notes': notes,
       'parameters': parameters,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -118,6 +123,7 @@ class Patient extends HiveObject {
       laborStatuses: json['laborStatuses'] != null
           ? List<String>.from(json['laborStatuses'] as List)
           : [],
+      notes: json['notes'] as String?,
       parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -138,6 +144,7 @@ class Patient extends HiveObject {
     bool? isRounded,
     bool? isDischarged,
     List<String>? laborStatuses,
+    String? notes,
     Map<String, dynamic>? parameters,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -156,6 +163,7 @@ class Patient extends HiveObject {
       isRounded: isRounded ?? this.isRounded,
       isDischarged: isDischarged ?? this.isDischarged,
       laborStatuses: laborStatuses ?? List<String>.from(this.laborStatuses ?? []),
+      notes: notes ?? this.notes,
       parameters: parameters ?? Map<String, dynamic>.from(this.parameters),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
@@ -224,6 +232,44 @@ class Patient extends HiveObject {
 
     final (weeks, days) = ga;
     return '${weeks}wk ${days}d';
+  }
+
+  /// Calculates post-delivery day string for Postpartum patients
+  /// Returns "PPD# s/p SVD/VAVD" or "POD# s/p C/S/Repeat C/S" based on delivery details
+  String? get postDeliveryDayString {
+    if (type != PatientType.postpartum) return null;
+    if (!parameters.containsKey('Delivery Date') || !parameters.containsKey('Delivery Mode')) {
+      return null;
+    }
+
+    final deliveryDateStr = parameters['Delivery Date'];
+    if (deliveryDateStr == null) return null;
+
+    try {
+      final deliveryDateTime = DateTime.parse(deliveryDateStr);
+      final deliveryDate = DateTime(
+        deliveryDateTime.year,
+        deliveryDateTime.month,
+        deliveryDateTime.day,
+      );
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      // Calculate days since delivery (counting from day 0)
+      final daysSinceDelivery = today.difference(deliveryDate).inDays;
+
+      final deliveryMode = parameters['Delivery Mode'] as String;
+
+      // Determine if it's PPD or POD based on delivery mode
+      final isCesarean = deliveryMode.contains('C/S');
+      final prefix = isCesarean ? 'POD' : 'PPD';
+
+      // Format: "PPD# s/p mode" or "POD# s/p mode"
+      return '$prefix#$daysSinceDelivery s/p $deliveryMode';
+    } catch (e) {
+      return null;
+    }
   }
 
   /// Combined patient info string for card display: {}y G{}P{} @ {}wk {}d

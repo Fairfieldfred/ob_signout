@@ -419,6 +419,8 @@ class _ImportPreviewScreenState extends State<ImportPreviewScreen> {
           gestationalAgeWeeks: patient.gestationalAgeWeeks,
           gestationalAgeDays: patient.gestationalAgeDays,
           gestationalAgeSetDate: patient.gestationalAgeSetDate,
+          laborStatuses: patient.laborStatuses,
+          notes: patient.notes,
           parameters: patient.parameters,
         );
       }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -48,6 +49,7 @@ class BleTransferStrategy implements TransferStrategy {
   List<BleDataChunk>? _chunksToSend;
   BleTransferMetadata? _metadata;
   bool _isAdvertising = false;
+  DateTime? _transferStartTime;
 
   BleTransferStrategy() {
     _setupPeripheralListeners();
@@ -78,20 +80,36 @@ class BleTransferStrategy implements TransferStrategy {
     switch (state) {
       case 'advertising':
         _isAdvertising = true;
+        _transferStartTime = null;
         _updateProgress(TransferState.advertising, 'Advertising... waiting for connection');
         break;
       case 'connected':
         _updateProgress(TransferState.connecting, 'Device connected');
         break;
       case 'subscribed':
+        _transferStartTime = DateTime.now();
         _updateProgress(TransferState.transferring, 'Starting transfer...');
+        debugPrint('[BLE Send] ====== TRANSFER STARTED ======');
+        debugPrint('[BLE Send] Transfer start time: ${_transferStartTime!.toIso8601String()}');
         break;
       case 'complete':
+        if (_transferStartTime != null && _metadata != null) {
+          final duration = DateTime.now().difference(_transferStartTime!);
+          final bytesPerSecond = (_metadata!.totalBytes / duration.inMilliseconds * 1000).round();
+          debugPrint('[BLE Send] ====== TRANSFER COMPLETE ======');
+          debugPrint('[BLE Send] Total bytes sent: ${_metadata!.totalBytes}');
+          debugPrint('[BLE Send] Total chunks sent: ${_metadata!.totalChunks}');
+          debugPrint('[BLE Send] Transfer duration: ${duration.inSeconds}.${(duration.inMilliseconds % 1000).toString().padLeft(3, '0')}s');
+          debugPrint('[BLE Send] Average speed: ${_formatBytes(bytesPerSecond)}/s');
+          debugPrint('[BLE Send] ==============================');
+        }
         _updateProgress(TransferState.completed, 'Transfer complete!');
         _isAdvertising = false;
+        _transferStartTime = null;
         break;
       case 'stopped':
         _isAdvertising = false;
+        _transferStartTime = null;
         _updateProgress(TransferState.idle, 'Stopped advertising');
         break;
     }
@@ -154,6 +172,11 @@ class BleTransferStrategy implements TransferStrategy {
       _updateProgress(TransferState.preparing, 'Preparing patient data...');
       final jsonData = ShareService.createObsFileData(patients, senderName, notes);
 
+      // Debug: Log raw data size
+      debugPrint('[BLE Transfer] ====== DATA PREPARATION ======');
+      debugPrint('[BLE Transfer] Raw JSON size: ${jsonData.length} characters');
+      debugPrint('[BLE Transfer] Raw JSON bytes: ${utf8.encode(jsonData).length} bytes');
+
       // Create chunks
       _chunksToSend = BleDataChunker.chunkData(jsonData);
       _metadata = BleTransferMetadata.fromJsonData(
@@ -161,6 +184,21 @@ class BleTransferStrategy implements TransferStrategy {
         senderName,
         jsonData,
       );
+
+      // Debug: Log chunk information
+      debugPrint('[BLE Transfer] Total chunks: ${_chunksToSend!.length}');
+      debugPrint('[BLE Transfer] Max chunk size: ${BleProtocol.maxChunkDataSize} bytes');
+
+      // Calculate and log chunk size statistics
+      final chunkSizes = _chunksToSend!.map((c) => c.data.length).toList();
+      final avgChunkSize = chunkSizes.reduce((a, b) => a + b) / chunkSizes.length;
+      final minChunkSize = chunkSizes.reduce((a, b) => a < b ? a : b);
+      final maxChunkSize = chunkSizes.reduce((a, b) => a > b ? a : b);
+
+      debugPrint('[BLE Transfer] Average chunk size: ${avgChunkSize.toStringAsFixed(1)} bytes');
+      debugPrint('[BLE Transfer] Min chunk size: $minChunkSize bytes');
+      debugPrint('[BLE Transfer] Max chunk size: $maxChunkSize bytes');
+      debugPrint('[BLE Transfer] ==============================');
 
       _updateProgress(
         TransferState.preparing,
@@ -376,6 +414,13 @@ class BleTransferStrategy implements TransferStrategy {
       final metadataBytes = await metadataChar.read();
       final metadata = BleTransferMetadata.fromBytes(Uint8List.fromList(metadataBytes));
 
+      debugPrint('[BLE Receive] ====== RECEIVING DATA ======');
+      debugPrint('[BLE Receive] Sender: ${metadata.senderName}');
+      debugPrint('[BLE Receive] Device: ${metadata.deviceName}');
+      debugPrint('[BLE Receive] Total bytes expected: ${metadata.totalBytes}');
+      debugPrint('[BLE Receive] Total chunks expected: ${metadata.totalChunks}');
+      debugPrint('[BLE Receive] Starting transfer...');
+
       _updateProgress(
         TransferState.transferring,
         'Receiving ${metadata.totalChunks} chunks from ${metadata.senderName}...',
@@ -386,25 +431,42 @@ class BleTransferStrategy implements TransferStrategy {
 
       _receivedChunks.clear();
       final completer = Completer<String>();
+      final startTime = DateTime.now();
 
       final subscription = dataChunkChar.onValueReceived.listen((value) {
         try {
           final chunk = BleDataChunk.fromBytes(Uint8List.fromList(value));
           _receivedChunks.add(chunk);
 
+          final bytesReceived = _receivedChunks.fold<int>(0, (sum, c) => sum + c.data.length);
+          final progressPercent = (bytesReceived / metadata.totalBytes * 100).toStringAsFixed(1);
+
+          // Debug: Log each chunk received
+          debugPrint('[BLE Receive] Chunk ${chunk.chunkIndex + 1}/${chunk.totalChunks} received: ${chunk.data.length} bytes (Progress: $progressPercent%, Total: $bytesReceived/${metadata.totalBytes} bytes)');
+
           _updateProgress(
             TransferState.transferring,
             'Received chunk ${chunk.chunkIndex + 1}/${chunk.totalChunks}',
-            bytesTransferred: _receivedChunks.fold<int>(0, (sum, c) => sum + c.data.length),
+            bytesTransferred: bytesReceived,
             totalBytes: metadata.totalBytes,
           );
 
           // Check if transfer is complete
           if (_receivedChunks.length == metadata.totalChunks) {
+            final duration = DateTime.now().difference(startTime);
+            final bytesPerSecond = (metadata.totalBytes / duration.inMilliseconds * 1000).round();
+            debugPrint('[BLE Receive] ====== TRANSFER COMPLETE ======');
+            debugPrint('[BLE Receive] Total bytes received: $bytesReceived');
+            debugPrint('[BLE Receive] Total chunks received: ${_receivedChunks.length}');
+            debugPrint('[BLE Receive] Transfer duration: ${duration.inSeconds}.${(duration.inMilliseconds % 1000).toString().padLeft(3, '0')}s');
+            debugPrint('[BLE Receive] Average speed: ${_formatBytes(bytesPerSecond)}/s');
+            debugPrint('[BLE Receive] ==============================');
+
             final jsonData = BleDataChunker.reassembleChunks(_receivedChunks);
             completer.complete(jsonData);
           }
         } catch (e) {
+          debugPrint('[BLE Receive] Error processing chunk: $e');
           if (!completer.isCompleted) {
             completer.completeError(e);
           }
