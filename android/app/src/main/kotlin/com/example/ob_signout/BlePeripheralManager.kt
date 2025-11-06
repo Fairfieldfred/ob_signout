@@ -87,9 +87,22 @@ class BlePeripheralManager(private val context: Context) {
      */
     fun stopAdvertising() {
         try {
+            Log.d(TAG, "Stopping advertising...")
             bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
-            gattServer?.close()
-            gattServer = null
+
+            // Add a small delay before closing the GATT server
+            // to give the receiver time to properly unsubscribe
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    Log.d(TAG, "Closing GATT server after delay...")
+                    gattServer?.close()
+                    gattServer = null
+                    Log.d(TAG, "GATT server closed")
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "Security exception closing GATT server", e)
+                }
+            }, 1000) // 1 second delay
+
             connectedDevice = null
             currentChunkIndex = 0
             onStateChanged?.invoke("stopped")
@@ -207,9 +220,21 @@ class BlePeripheralManager(private val context: Context) {
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         Log.d(TAG, "Device disconnected: ${device?.address}")
                         if (connectedDevice?.address == device?.address) {
+                            Log.d(TAG, "Connected device disconnected. Current chunk: $currentChunkIndex/${chunks.size}")
                             connectedDevice = null
+
+                            // Check if transfer was complete before disconnect
+                            if (currentChunkIndex >= chunks.size) {
+                                Log.d(TAG, "All chunks were sent, treating disconnect as successful completion")
+                                onTransferComplete?.invoke()
+                                onStateChanged?.invoke("complete")
+                            } else {
+                                Log.d(TAG, "Transfer incomplete - only $currentChunkIndex of ${chunks.size} chunks sent")
+                                onStateChanged?.invoke("disconnected")
+                            }
+                        } else {
+                            onStateChanged?.invoke("disconnected")
                         }
-                        onStateChanged?.invoke("disconnected")
                     }
                 }
             } catch (e: SecurityException) {
@@ -326,9 +351,10 @@ class BlePeripheralManager(private val context: Context) {
 
                 // Check if this is a notification subscription for the data chunk characteristic
                 if (descriptor?.characteristic?.uuid == DATA_CHUNK_CHAR_UUID) {
-                    // Check if notifications are being enabled
+                    // Check if notifications are being enabled or disabled
                     val enabled = value?.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ?: false
-                    Log.d(TAG, "Data chunk characteristic descriptor write - enabled: $enabled")
+                    val disabled = value?.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE) ?: false
+                    Log.d(TAG, "Data chunk characteristic descriptor write - enabled: $enabled, disabled: $disabled")
 
                     if (enabled) {
                         Log.d(TAG, "Client subscribed to notifications, starting chunk transfer")
@@ -338,6 +364,22 @@ class BlePeripheralManager(private val context: Context) {
 
                         // Start sending chunks
                         sendNextChunk(device)
+                    } else if (disabled) {
+                        Log.d(TAG, "Client unsubscribed from notifications")
+                        if (connectedDevice?.address == device?.address) {
+                            Log.d(TAG, "Connected client unsubscribed. Current chunk: $currentChunkIndex/${chunks.size}")
+
+                            // Check if transfer was complete before unsubscribe
+                            if (currentChunkIndex >= chunks.size) {
+                                Log.d(TAG, "All chunks were sent, treating unsubscribe as successful completion")
+                                onTransferComplete?.invoke()
+                                onStateChanged?.invoke("complete")
+                            } else {
+                                Log.d(TAG, "Transfer incomplete - only $currentChunkIndex of ${chunks.size} chunks sent")
+                                onStateChanged?.invoke("unsubscribed")
+                            }
+                            connectedDevice = null
+                        }
                     }
                 }
             } catch (e: SecurityException) {
@@ -351,7 +393,8 @@ class BlePeripheralManager(private val context: Context) {
     private fun sendNextChunk(device: BluetoothDevice?) {
         try {
             if (currentChunkIndex >= chunks.size) {
-                Log.d(TAG, "All chunks sent")
+                Log.d(TAG, "====== ALL CHUNKS SENT ======")
+                Log.d(TAG, "Transfer complete - sent $currentChunkIndex chunks")
                 onTransferComplete?.invoke()
                 onStateChanged?.invoke("complete")
                 return
@@ -361,11 +404,12 @@ class BlePeripheralManager(private val context: Context) {
             val characteristic = gattServer?.getService(SERVICE_UUID)?.getCharacteristic(DATA_CHUNK_CHAR_UUID)
             characteristic?.value = chunk
 
-            Log.d(TAG, "Sending chunk ${currentChunkIndex + 1}/${chunks.size} (${chunk.size} bytes)")
+            Log.d(TAG, "Sending chunk ${currentChunkIndex + 1}/${chunks.size} - size: ${chunk.size} bytes")
 
             device?.let {
                 val success = gattServer?.notifyCharacteristicChanged(it, characteristic, false) ?: false
                 if (success) {
+                    Log.d(TAG, "Chunk ${currentChunkIndex + 1} sent successfully")
                     currentChunkIndex++
 
                     // Send next chunk asynchronously to avoid stack overflow

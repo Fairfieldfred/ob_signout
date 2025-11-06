@@ -176,8 +176,17 @@ class BlePeripheralManager: NSObject {
 
     /// Stops advertising and cleans up.
     func stopAdvertising() {
+        NSLog("[BLE] Stopping advertising...")
         peripheralManager?.stopAdvertising()
-        peripheralManager?.removeAllServices()
+
+        // Add a delay before removing services to give the receiver
+        // time to properly unsubscribe from notifications
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            NSLog("[BLE] Removing services after delay...")
+            self?.peripheralManager?.removeAllServices()
+            NSLog("[BLE] Services removed")
+        }
+
         subscribedCentral = nil
         currentChunkIndex = 0
         onStateChanged?("stopped")

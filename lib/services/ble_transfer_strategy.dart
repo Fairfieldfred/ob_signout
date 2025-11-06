@@ -70,7 +70,8 @@ class BleTransferStrategy implements TransferStrategy {
     _peripheralCompleteSubscription = _peripheralChannel.transferCompleteStream.listen((_) {
       debugPrint('[BLE Strategy] Transfer complete stream received');
       _updateProgress(TransferState.completed, 'Transfer complete!');
-      _isAdvertising = false;
+      // Stop advertising to clean up the peripheral manager
+      stopAdvertising();
     });
     debugPrint('[BLE Strategy] Peripheral listeners setup complete');
   }
@@ -104,7 +105,8 @@ class BleTransferStrategy implements TransferStrategy {
           debugPrint('[BLE Send] ==============================');
         }
         _updateProgress(TransferState.completed, 'Transfer complete!');
-        _isAdvertising = false;
+        // Stop advertising to clean up the peripheral manager
+        stopAdvertising();
         _transferStartTime = null;
         break;
       case 'stopped':
@@ -248,6 +250,45 @@ class BleTransferStrategy implements TransferStrategy {
     }
   }
 
+  /// Waits for Bluetooth adapter to be in a ready state (on).
+  /// Returns true if ready, false if timeout or error state.
+  Future<bool> _waitForBluetoothReady({required Duration timeout}) async {
+    final completer = Completer<bool>();
+
+    StreamSubscription<BluetoothAdapterState>? subscription;
+
+    // Set up timeout
+    final timer = Timer(timeout, () {
+      if (!completer.isCompleted) {
+        subscription?.cancel();
+        completer.complete(false);
+      }
+    });
+
+    // Listen for adapter state changes
+    subscription = FlutterBluePlus.adapterState.listen((state) {
+      debugPrint('[BLE] Bluetooth adapter state: $state');
+
+      if (state == BluetoothAdapterState.on) {
+        if (!completer.isCompleted) {
+          timer.cancel();
+          subscription?.cancel();
+          completer.complete(true);
+        }
+      } else if (state == BluetoothAdapterState.off ||
+                 state == BluetoothAdapterState.unauthorized) {
+        if (!completer.isCompleted) {
+          timer.cancel();
+          subscription?.cancel();
+          completer.complete(false);
+        }
+      }
+      // For 'unknown' or 'unavailable', keep waiting for a definitive state
+    });
+
+    return completer.future;
+  }
+
   /// Starts scanning for nearby BLE devices.
   Future<void> startScanning() async {
     try {
@@ -259,24 +300,36 @@ class BleTransferStrategy implements TransferStrategy {
       // Stop any existing scan
       await FlutterBluePlus.stopScan();
 
-      // On iOS, listen for adapter state to catch permission/power issues
+      // Wait for Bluetooth adapter to be ready (especially important on iOS)
       if (Platform.isIOS) {
-        final stateSubscription = FlutterBluePlus.adapterState.listen((state) {
-          if (state == BluetoothAdapterState.unauthorized) {
+        _updateProgress(TransferState.browsing, 'Initializing Bluetooth...');
+
+        // Wait for adapter to be ready with timeout
+        final ready = await _waitForBluetoothReady(timeout: const Duration(seconds: 5));
+
+        if (!ready) {
+          final currentState = await FlutterBluePlus.adapterState.first;
+          if (currentState == BluetoothAdapterState.unauthorized) {
             _updateProgress(
               TransferState.error,
-              'Bluetooth permission denied. Please enable Bluetooth in Settings → ${Platform.isIOS ? 'OB SignOut' : 'Apps'}.',
+              'Bluetooth permission denied. Please enable Bluetooth in Settings → OB SignOut.',
             );
-          } else if (state == BluetoothAdapterState.off) {
+          } else if (currentState == BluetoothAdapterState.off) {
             _updateProgress(
               TransferState.error,
               'Bluetooth is turned off. Please turn on Bluetooth in Settings.',
             );
+          } else {
+            _updateProgress(
+              TransferState.error,
+              'Bluetooth failed to initialize. Please try again.',
+            );
           }
-        });
-        // Cancel after a short delay - we just need to check initial state
-        Future.delayed(const Duration(seconds: 2), () => stateSubscription.cancel());
+          return;
+        }
       }
+
+      _updateProgress(TransferState.browsing, 'Scanning for nearby devices...');
 
       // Start scanning
       await FlutterBluePlus.startScan(
@@ -426,8 +479,29 @@ class BleTransferStrategy implements TransferStrategy {
         'Receiving ${metadata.totalChunks} chunks from ${metadata.senderName}...',
       );
 
-      // Subscribe to data chunks
-      await dataChunkChar.setNotifyValue(true);
+      // Subscribe to data chunks with retry logic
+      // Sometimes the GATT server needs a moment to be ready
+      bool subscribed = false;
+      int retryCount = 0;
+      const maxRetries = 3;
+
+      while (!subscribed && retryCount < maxRetries) {
+        try {
+          debugPrint('[BLE Receive] Attempting to subscribe to notifications (attempt ${retryCount + 1}/$maxRetries)');
+          await dataChunkChar.setNotifyValue(true);
+          subscribed = true;
+          debugPrint('[BLE Receive] Successfully subscribed to notifications');
+        } catch (e) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            debugPrint('[BLE Receive] Subscribe failed, waiting before retry: $e');
+            await Future.delayed(Duration(milliseconds: 500 * retryCount)); // Increasing delay
+          } else {
+            debugPrint('[BLE Receive] Subscribe failed after $maxRetries attempts: $e');
+            rethrow;
+          }
+        }
+      }
 
       _receivedChunks.clear();
       final completer = Completer<String>();
@@ -480,6 +554,16 @@ class BleTransferStrategy implements TransferStrategy {
       );
 
       await subscription.cancel();
+
+      // Unsubscribe from notifications before disconnecting
+      // This triggers the peripheral's didUnsubscribeFrom callback
+      debugPrint('[BLE Receive] Unsubscribing from notifications...');
+      await dataChunkChar.setNotifyValue(false);
+
+      // Small delay to ensure unsubscribe is processed
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      debugPrint('[BLE Receive] Disconnecting from device...');
       await device.disconnect();
 
       _updateProgress(TransferState.completed, 'Transfer complete!');
@@ -517,13 +601,19 @@ class BleTransferStrategy implements TransferStrategy {
 
   @override
   Future<void> dispose() async {
+    debugPrint('[BLE Strategy] Disposing strategy');
     await cancel();
+
+    // Cancel peripheral subscriptions for this instance
     await _peripheralStateSubscription?.cancel();
     await _peripheralErrorSubscription?.cancel();
     await _peripheralCompleteSubscription?.cancel();
+
     await _progressController.close();
     await _devicesController.close();
-    _peripheralChannel.dispose();
+
+    // Do NOT dispose the peripheral channel - it's a singleton
+    debugPrint('[BLE Strategy] Dispose complete');
   }
 
   void _updateProgress(

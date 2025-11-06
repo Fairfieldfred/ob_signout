@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/patient.dart';
 import '../models/patient_type.dart';
 import '../providers/patient_provider.dart';
+import '../services/preferences_service.dart';
 import '../services/transfer_manager.dart';
 import '../widgets/patient_card.dart';
 import 'add_edit_patient_screen.dart';
@@ -454,6 +455,14 @@ class _PatientListScreenState extends State<PatientListScreen> {
   Future<String?> _showSenderNameDialog(BuildContext context) async {
     final controller = TextEditingController();
 
+    // Load previously saved name
+    final savedName = await PreferencesService.loadSharerName();
+    if (savedName != null) {
+      controller.text = savedName;
+    }
+
+    if (!context.mounted) return null;
+
     try {
       final result = await showDialog<String>(
         context: context,
@@ -482,10 +491,14 @@ class _PatientListScreenState extends State<PatientListScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
-                  Navigator.pop(context, name);
+                  // Save the name for future use
+                  await PreferencesService.saveSharerName(name);
+                  if (context.mounted) {
+                    Navigator.pop(context, name);
+                  }
                 }
               },
               child: const Text('Share'),
