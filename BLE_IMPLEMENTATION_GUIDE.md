@@ -425,6 +425,240 @@ Future<bool> isAvailable() async {
 }
 ```
 
+### 7. Transfer Completion and GATT Service Lifecycle ⚠️ CRITICAL
+
+This is one of the most subtle and critical issues in cross-platform BLE implementation.
+
+#### Problem: "GATT_INVALID_HANDLE" and "primary service not found" Errors
+
+**iOS → Android Transfer:**
+```
+Connection failed: FlutterBluePlusException | setNotifyValue |
+android-code: 1 GATT_INVALID_HANDLE
+```
+
+**Android → iOS Transfer:**
+```
+Connection failed: PlatformException(setNotifyValue,
+primary service not found 'fe01', null, null)
+```
+
+#### Root Cause: Race Condition During Service Teardown
+
+When a BLE transfer completes:
+1. **Sender (Peripheral)** finishes sending all chunks
+2. **Sender** calls `stopAdvertising()` and immediately tears down GATT service
+3. **Receiver (Central)** receives all data successfully
+4. **Receiver** tries to unsubscribe from notifications (`setNotifyValue(false)`)
+5. **❌ ERROR**: GATT service is already gone before receiver can unsubscribe!
+
+This happens on **BOTH** platforms:
+- **iOS** removes services too quickly via `peripheralManager?.removeAllServices()`
+- **Android** closes GATT server too quickly via `gattServer?.close()`
+
+#### Solution: Graceful Shutdown with Delay
+
+Add a **1-second delay** before tearing down GATT services to give the receiver time to unsubscribe properly.
+
+##### iOS Implementation (AppDelegate.swift)
+
+```swift
+func stopAdvertising() {
+    NSLog("[BLE] Stopping advertising...")
+    peripheralManager?.stopAdvertising()
+
+    // Add a delay before removing services to give the receiver
+    // time to properly unsubscribe from notifications
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        NSLog("[BLE] Removing services after delay...")
+        self?.peripheralManager?.removeAllServices()
+        NSLog("[BLE] Services removed")
+    }
+
+    subscribedCentral = nil
+    currentChunkIndex = 0
+    onStateChanged?("stopped")
+}
+```
+
+##### Android Implementation (BlePeripheralManager.kt)
+
+```kotlin
+fun stopAdvertising() {
+    try {
+        Log.d(TAG, "Stopping advertising...")
+        bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+
+        // Add a small delay before closing the GATT server
+        // to give the receiver time to properly unsubscribe
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                Log.d(TAG, "Closing GATT server after delay...")
+                gattServer?.close()
+                gattServer = null
+                Log.d(TAG, "GATT server closed")
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Security exception closing GATT server", e)
+            }
+        }, 1000) // 1 second delay
+
+        connectedDevice = null
+        currentChunkIndex = 0
+        onStateChanged?.invoke("stopped")
+    } catch (e: SecurityException) {
+        Log.e(TAG, "Security exception stopping advertising", e)
+    }
+}
+```
+
+#### Why 1 Second?
+
+- **Too short** (100-200ms): Receiver might not have time to send unsubscribe request
+- **Too long** (5+ seconds): Wastes battery, delays cleanup, confuses state machine
+- **1 second**: Sweet spot that works reliably on both platforms
+
+### 8. Notification Subscription Retry Logic
+
+#### Problem: setNotifyValue Timeout on First Attempt
+
+Sometimes the GATT server needs a moment to be ready for subscription, especially on Android→iOS transfers.
+
+```
+Connection failed: FlutterBluePlusException setNotifyValue fbp-code:1 times out
+```
+
+#### Solution: Retry with Exponential Backoff
+
+```dart
+// Subscribe to data chunks with retry logic
+bool subscribed = false;
+int retryCount = 0;
+const maxRetries = 3;
+
+while (!subscribed && retryCount < maxRetries) {
+  try {
+    debugPrint('[BLE Receive] Attempting to subscribe (attempt ${retryCount + 1}/$maxRetries)');
+    await dataChunkChar.setNotifyValue(true);
+    subscribed = true;
+    debugPrint('[BLE Receive] Successfully subscribed to notifications');
+  } catch (e) {
+    retryCount++;
+    if (retryCount < maxRetries) {
+      debugPrint('[BLE Receive] Subscribe failed, waiting before retry: $e');
+      await Future.delayed(Duration(milliseconds: 500 * retryCount)); // Exponential backoff
+    } else {
+      debugPrint('[BLE Receive] Subscribe failed after $maxRetries attempts: $e');
+      rethrow;
+    }
+  }
+}
+```
+
+**Retry delays:**
+- Attempt 1: Immediate
+- Attempt 2: 500ms delay
+- Attempt 3: 1000ms delay
+
+### 9. iOS Bluetooth Initialization Timing
+
+#### Problem: CBManagerStateUnknown on First Launch
+
+On the very first app launch, iOS CoreBluetooth may not be ready immediately:
+
+```
+bluetooth must be turned on. (CBManagerStateUnknown)
+```
+
+#### Root Cause
+
+iOS Bluetooth stack needs time to initialize when the app first requests Bluetooth access. This only happens once, but it can cause immediate scan failures.
+
+#### Solution: Wait for Bluetooth Ready State
+
+```dart
+Future<bool> _waitForBluetoothReady({required Duration timeout}) async {
+  final startTime = DateTime.now();
+
+  while (DateTime.now().difference(startTime) < timeout) {
+    final state = await _blePeripheralChannel.getAdapterState();
+    debugPrint('[BLE Strategy] Bluetooth state: $state');
+
+    if (state == 'on') {
+      debugPrint('[BLE Strategy] Bluetooth is ready');
+      return true;
+    }
+
+    if (state == 'unauthorized' || state == 'unsupported') {
+      debugPrint('[BLE Strategy] Bluetooth permanently unavailable: $state');
+      return false;
+    }
+
+    // Wait a bit before checking again
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
+  debugPrint('[BLE Strategy] Timeout waiting for Bluetooth');
+  return false;
+}
+
+// Use before scanning
+Future<void> receiveData(BluetoothDevice device, String deviceId) async {
+  // Wait for Bluetooth to be ready (especially important on iOS first launch)
+  final isReady = await _waitForBluetoothReady(
+    timeout: const Duration(seconds: 5)
+  );
+
+  if (!isReady) {
+    throw Exception('Bluetooth not ready. Please ensure Bluetooth is enabled.');
+  }
+
+  // Now safe to proceed with scanning
+  await _scanForDevices();
+}
+```
+
+### 10. Singleton Listener Persistence
+
+#### Problem: "State stream has NO listeners" on Second Transfer
+
+After a successful transfer, attempting a second transfer fails with:
+
+```
+State stream has NO listeners - stopping advertising
+```
+
+#### Root Cause
+
+The `BlePeripheralChannel` is a **singleton** (shared across the entire app), but its stream subscriptions were being cancelled in the `dispose()` method of the transfer strategy.
+
+```dart
+// ❌ WRONG: This cancels listeners for the singleton
+@override
+void dispose() {
+  _peripheralStateSubscription?.cancel();  // Don't do this!
+  _peripheralCompleteSubscription?.cancel();  // Or this!
+}
+```
+
+When a new transfer starts, the singleton channel has no active listeners because they were all cancelled.
+
+#### Solution: Keep Singleton Listeners Active
+
+Since `BlePeripheralChannel` is a singleton and needs to handle multiple transfers, **don't cancel its subscriptions** in the strategy's dispose method.
+
+```dart
+// ✅ CORRECT: Only cancel local subscriptions
+@override
+void dispose() {
+  _scanSubscription?.cancel();
+  _progressSubscription?.cancel();
+  // DON'T cancel peripheral channel subscriptions
+  // The singleton needs to maintain these across transfers
+}
+```
+
+The peripheral channel subscriptions will persist for the lifetime of the app, allowing multiple consecutive transfers to work correctly.
+
 ---
 
 ## BLE Protocol Details
@@ -618,18 +852,23 @@ Future<TransferMethodRecommendation> recommendMethod() async {
 - [ ] All data transferred completely
 - [ ] UI closes properly after transfer
 - [ ] No duplicate completion events
+- [ ] Receiver can unsubscribe without GATT_INVALID_HANDLE error
+- [ ] Multiple consecutive transfers work (2nd, 3rd transfer succeed)
 
 ### Android → iOS Transfer
 - [ ] Sender name appears in scan response
 - [ ] iOS reads service data correctly
 - [ ] Transfer completes successfully
 - [ ] Screen closes without black screen
+- [ ] Receiver can unsubscribe without "primary service not found" error
+- [ ] Multiple consecutive transfers work (2nd, 3rd transfer succeed)
 
 ### Permission Scenarios
 - [ ] First launch - permissions requested
 - [ ] Permissions denied - clear error message
 - [ ] Bluetooth disabled - appropriate error
 - [ ] Location disabled (Android) - scan fails with clear message
+- [ ] iOS first launch - Bluetooth initializes properly (no CBManagerStateUnknown error)
 
 ### Network Checks
 - [ ] WiFi connected and working - recommends WiFi
@@ -642,6 +881,8 @@ Future<TransferMethodRecommendation> recommendMethod() async {
 - [ ] App backgrounded during transfer - resumes or fails cleanly
 - [ ] Multiple rapid scan/advertise cycles - no crashes
 - [ ] Very large data sets (>1MB) - chunks properly
+- [ ] Second transfer after successful first transfer - no "Already advertising" error
+- [ ] GATT service teardown timing - receiver can cleanly disconnect
 
 ---
 
@@ -793,6 +1034,32 @@ case 'onTransferComplete':
 
 10. **Test early and often on both platforms** - Behavior differs significantly between iOS and Android
 
+11. **GATT service lifecycle timing is critical** ⚠️ - The most subtle cross-platform BLE issue:
+    - Peripheral must delay service teardown to allow central to unsubscribe
+    - Both iOS and Android need 1-second delay before removing GATT services
+    - Immediate teardown causes "GATT_INVALID_HANDLE" (Android) or "service not found" (iOS) errors
+    - This affects BOTH transfer directions (iOS→Android and Android→iOS)
+
+12. **Retry patterns are essential for BLE reliability** - Network conditions vary:
+    - Notification subscription can fail on first attempt
+    - Exponential backoff (500ms, 1000ms) solves most timing issues
+    - Three attempts is the sweet spot (more = too slow, fewer = unreliable)
+
+13. **iOS Bluetooth initialization needs time on first launch** - CBManagerStateUnknown is normal:
+    - Wait up to 5 seconds for Bluetooth to initialize
+    - Only happens on very first app launch
+    - Check state in a loop rather than failing immediately
+
+14. **Singleton stream listeners must persist** - Don't cancel subscriptions in dispose():
+    - `BlePeripheralChannel` is a singleton shared across transfers
+    - Canceling subscriptions breaks subsequent transfers
+    - "State stream has NO listeners" error indicates this problem
+
+15. **Always call stopAdvertising() after transfer completion** - Clean state management:
+    - Prevents "Already advertising" errors on subsequent transfers
+    - Both success and error paths must clean up properly
+    - Missing cleanup causes second transfer to fail
+
 ---
 
 ## Future Improvements
@@ -827,6 +1094,42 @@ case 'onTransferComplete':
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-10-24
+**Document Version**: 2.0
+**Last Updated**: 2025-11-06
 **Author**: Implementation lessons from OB SignOut app development
+
+## Version History
+
+### Version 2.0 (2025-11-06)
+**Major Updates - Transfer Completion Debugging Session**
+
+Added comprehensive documentation of timing-related bugs discovered and fixed during extensive debugging:
+
+1. **New Section 7: Transfer Completion and GATT Service Lifecycle** ⚠️ CRITICAL
+   - Documented the race condition during service teardown
+   - Added graceful shutdown solution with 1-second delay for both platforms
+   - Explained "GATT_INVALID_HANDLE" and "primary service not found" errors
+
+2. **New Section 8: Notification Subscription Retry Logic**
+   - Documented setNotifyValue timeout issues
+   - Added retry pattern with exponential backoff (3 attempts, 500ms/1000ms delays)
+
+3. **New Section 9: iOS Bluetooth Initialization Timing**
+   - Documented CBManagerStateUnknown error on first app launch
+   - Added wait-for-ready pattern (5 second timeout)
+
+4. **New Section 10: Singleton Listener Persistence**
+   - Documented "State stream has NO listeners" error on second transfer
+   - Explained why singleton subscriptions must not be cancelled
+
+5. **Updated Lessons Learned**
+   - Added 5 new critical lessons (#11-15) about timing coordination
+   - Emphasized GATT service lifecycle as the most subtle cross-platform issue
+
+6. **Updated Testing Checklist**
+   - Added items for multiple consecutive transfers
+   - Added items for GATT service teardown timing
+   - Added iOS first launch Bluetooth initialization check
+
+### Version 1.0 (2025-10-24)
+Initial documentation covering basic BLE implementation, permissions, method channels, and common gotchas.
